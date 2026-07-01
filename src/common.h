@@ -4,8 +4,10 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <regex>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,7 +23,7 @@ enum class CompilerMode {
 
 inline CompilerMode g_compilerMode = CompilerMode::None;
 inline std::string g_gccPath = "";
-inline std::string g_clangPath = "P:\\Cemu\\BotW-VR-Project\\ClangToPatch\\llvm\\clang++.exe";
+inline std::string g_clangPath = "";
 
 inline fs::path getExecutableDir() {
     char buffer[MAX_PATH];

@@ -1,6 +1,5 @@
 #pragma once
-#include <string>
-#include <string_view>
+#include "common.h"
 
 bool isForbiddenInstruction(const char* name);
 std::string assembleInstructionToBytes(std::string_view instruction);

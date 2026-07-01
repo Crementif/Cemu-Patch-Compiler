@@ -1,16 +1,16 @@
-# ClangToCemuPatch
+# Cemu (C++) Patch Compiler
 
-`ClangToCemuPatch` is a bridge compiler utility that compiles C/C++ source files into PowerPC (PPC) assembly patches compatible with Cemu's patching framework. It processes the compiled assembly to adapt register syntax, labels, and import relocations into a format Cemu can inject.
+`Cemu Patch Compiler` is a bridge compiler utility that compiles C/C++ source files into PowerPC (PPC) assembly patches compatible with Cemu's patching framework. It processes the compiled assembly to adapt register syntax, labels, and import relocations into a format Cemu can inject.
 
 ---
 
 ## 1. Setup: PowerPC Compiler Installation
 
-Before using `ClangToCemuPatch`, you must place a PowerPC compiler toolchain in the `compilers/` directory (located next to the executable):
+Before using `Cemu Patch Compiler`, you must place a PowerPC compiler toolchain in the `compilers/` directory (located next to the executable):
 
 ### PowerPC GCC Toolchain (Recommended)
 1. Download the PowerPC EABI toolchain from [SysProgs PowerPC Toolchains](https://gnutoolchains.com/powerpc-eabi/) (e.g., `powerpc-eabi-gcc4.9.0.exe` or newer).
-2. Install or extract it directly into the `compilers/GCC/` directory next to the `ClangToCemuPatch.exe`. You can make this folder yourself, or run the program once.
+2. Install or extract it directly into the `compilers/GCC/` directory next to the `CemuPatchCompiler.exe`. You can make this folder yourself, or run the program once.
 3. Verify that the files are located at:
    - `compilers/GCC/bin/powerpc-eabi-gcc.exe`
    - `compilers/GCC/bin/powerpc-eabi-objcopy.exe`
@@ -23,15 +23,15 @@ Before using `ClangToCemuPatch`, you must place a PowerPC compiler toolchain in 
 
 ## 2. Usage Modes
 
-`ClangToCemuPatch` supports four execution modes for compiling files:
+`Cemu Patch Compiler` supports four execution modes for compiling files:
 
 ### Drag & Drop
-You can drag a source folder or a single C/C++ file and drop it directly onto the `ClangToCemuPatch.exe` executable:
+You can drag a source folder or a single C/C++ file and drop it directly onto the `CemuPatchCompiler.exe` executable:
 - **Folder**: Compiles all `.cpp` and `.c` files in the folder and outputs to `compiled.asm` in that folder.
 - **File**: Compiles the file (and other files in its parent directory) and outputs to `compiled.asm` in the parent directory.
 
 ### Portable Folder Compilation
-If you place `ClangToCemuPatch.exe` next to some C/C++ files (such as `.cpp`, `.c`, `.h`, `.hpp` files) and run it:
+If you place `CemuPatchCompiler.exe` next to some C/C++ files (such as `.cpp`, `.c`, `.h`, `.hpp` files) and run it:
 - The tool automatically detects C/C++ files in the current folder.
 - It compiles them and outputs to a local `compiled.asm` file in the same directory.
 
@@ -39,10 +39,10 @@ If you place `ClangToCemuPatch.exe` next to some C/C++ files (such as `.cpp`, `.
 You can run the utility from a command prompt or script:
 ```powershell
 # Compile all source files in a specific directory
-ClangToCemuPatch.exe "C:\Path\To\Source"
+CemuPatchCompiler.exe "C:\Path\To\Source"
 
 # Compile all source files and specify a custom output path
-ClangToCemuPatch.exe "C:\Path\To\Source" "C:\Path\To\Output\final_patch.asm"
+CemuPatchCompiler.exe "C:\Path\To\Source" "C:\Path\To\Output\final_patch.asm"
 ```
 
 ### Config File (`config.ini`)

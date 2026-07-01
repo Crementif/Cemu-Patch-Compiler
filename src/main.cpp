@@ -1,7 +1,5 @@
 #include "common.h"
 #include "StringParser.h"
-#include <map>
-#include <sstream>
 
 struct Config {
 	std::map<std::string, std::map<std::string, std::string>> sections;
@@ -63,13 +61,13 @@ inline void writeDefaultIniFile(const std::filesystem::path& path) {
 	bool isBinDir = (path.parent_path().filename() == "bin");
 
 	file << "[Paths]\r\n";
-	file << "; Directory containing C/C++ source files to compile.\r\n";
+	file << "; Directory containing C/C++ source files to compile (relative to config or absolute)\r\n";
 	if (isBinDir) {
 		file << "SourceDir = ../examples/camera\r\n\r\n";
 	} else {
 		file << "SourceDir = examples/camera\r\n\r\n";
 	}
-	file << "; Output file path for compiled assembly patch.\r\n";
+	file << "; Output file path for compiled assembly patch\r\n";
 	if (isBinDir) {
 		file << "OutFile = ../examples/camera/compiled.asm\r\n\r\n";
 	} else {
