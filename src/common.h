@@ -31,10 +31,129 @@ inline fs::path getExecutableDir() {
     return fs::path(buffer).parent_path();
 }
 
-inline void detectCompiler() {
+struct Config {
+	std::map<std::string, std::map<std::string, std::string>> sections;
+
+	std::string get(const std::string& section, const std::string& key, const std::string& defaultValue = "") const {
+		auto sIt = sections.find(section);
+		if (sIt != sections.end()) {
+			auto kIt = sIt->second.find(key);
+			if (kIt != sIt->second.end()) {
+				return kIt->second;
+			}
+		}
+		return defaultValue;
+	}
+};
+
+inline Config parseIniFile(const fs::path& path) {
+	Config config;
+	std::ifstream file(path.string(), std::ios::binary);
+	if (!file.is_open()) return config;
+
+	std::string line;
+	std::string currentSection = "";
+	while (std::getline(file, line)) {
+		if (!line.empty() && line.back() == '\r') {
+			line.pop_back();
+		}
+		while (!line.empty() && (line.front() == ' ' || line.front() == '\t')) line.erase(line.begin());
+		while (!line.empty() && (line.back() == ' ' || line.back() == '\t')) line.pop_back();
+
+		if (line.empty() || line[0] == ';' || line[0] == '#') continue;
+
+		if (line.front() == '[' && line.back() == ']') {
+			currentSection = line.substr(1, line.size() - 2);
+			while (!currentSection.empty() && (currentSection.front() == ' ' || currentSection.front() == '\t')) currentSection.erase(currentSection.begin());
+			while (!currentSection.empty() && (currentSection.back() == ' ' || currentSection.back() == '\t')) currentSection.pop_back();
+		} else {
+			size_t eqPos = line.find('=');
+			if (eqPos != std::string::npos) {
+				std::string key = line.substr(0, eqPos);
+				std::string value = line.substr(eqPos + 1);
+
+				while (!key.empty() && (key.front() == ' ' || key.front() == '\t')) key.erase(key.begin());
+				while (!key.empty() && (key.back() == ' ' || key.back() == '\t')) key.pop_back();
+				while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) value.erase(value.begin());
+				while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) value.pop_back();
+
+				config.sections[currentSection][key] = value;
+			}
+		}
+	}
+	return config;
+}
+
+inline void writeDefaultIniFile(const fs::path& path) {
+	std::ofstream file(path.string(), std::ios::binary);
+	if (!file.is_open()) return;
+
+	bool isBinDir = (path.parent_path().filename() == "bin");
+
+	file << "[Paths]\r\n";
+	file << "; Directory containing C/C++ source files to compile (relative to config or absolute)\r\n";
+	if (isBinDir) {
+		file << "SourceDir = ../examples/camera\r\n\r\n";
+	} else {
+		file << "SourceDir = examples/camera\r\n\r\n";
+	}
+	file << "; Output file path for compiled assembly patch\r\n";
+	if (isBinDir) {
+		file << "OutFile = ../examples/camera/patch_compiled.asm\r\n\r\n";
+	} else {
+		file << "OutFile = examples/camera/patch_compiled.asm\r\n\r\n";
+	}
+	file << "[Compilers]\r\n";
+	file << "; [Optional] Custom compiler paths (relative to config or absolute)\r\n";
+	if (isBinDir) {
+		file << ";GCC = ../compilers/GCC/bin/powerpc-eabi-gcc.exe\r\n";
+		file << ";Clang = ../compilers/clang/bin/clang++.exe\r\n";
+	} else {
+		file << ";GCC = compilers/GCC/bin/powerpc-eabi-gcc.exe\r\n";
+		file << ";Clang = compilers/clang/bin/clang++.exe\r\n";
+	}
+}
+
+inline fs::path resolvePath(const fs::path& basePath, const std::string& pathStr) {
+	fs::path p(pathStr);
+	if (p.is_absolute()) {
+		return p;
+	}
+	return basePath / p;
+}
+
+inline void detectCompiler(const fs::path& configDir, const Config& config) {
     fs::path exeDir = getExecutableDir();
+
+    std::string customGcc = config.get("Compilers", "GCC");
+    std::string customClang = config.get("Compilers", "Clang");
+
+    if (!customGcc.empty()) {
+        fs::path resolvedGcc = resolvePath(configDir, customGcc);
+        std::error_code ec;
+        if (fs::exists(resolvedGcc, ec) && !fs::is_directory(resolvedGcc, ec)) {
+            g_compilerMode = CompilerMode::GCC;
+            g_gccPath = resolvedGcc.string();
+            return;
+        } else {
+            printf("Warning: Configured GCC path not found or invalid: %s\n", resolvedGcc.generic_string().c_str());
+        }
+    }
+
+    if (!customClang.empty()) {
+        fs::path resolvedClang = resolvePath(configDir, customClang);
+        std::error_code ec;
+        if (fs::exists(resolvedClang, ec) && !fs::is_directory(resolvedClang, ec)) {
+            g_compilerMode = CompilerMode::Clang;
+            g_clangPath = resolvedClang.string();
+            return;
+        } else {
+            printf("Warning: Configured Clang path not found or invalid: %s\n", resolvedClang.generic_string().c_str());
+        }
+    }
+
+    // Fallback to auto-detection
     fs::path compilersPath = "";
-    
     std::vector<fs::path> searchPaths = {
         "compilers",
         "../compilers",
@@ -58,9 +177,6 @@ inline void detectCompiler() {
         } else {
             compilersPath = "compilers";
         }
-        std::error_code ec;
-        fs::create_directories(compilersPath / "GCC", ec);
-        fs::create_directories(compilersPath / "clang", ec);
     }
 
     // Prefer GCC

@@ -6,18 +6,25 @@
 
 ## 1. Setup: PowerPC Compiler Installation
 
-Before using `Cemu Patch Compiler`, you must place a PowerPC compiler toolchain in the `compilers/` directory (located next to the executable):
+Before using `Cemu Patch Compiler`, you must configure a PowerPC compiler toolchain (GCC is recommended).
 
 ### PowerPC GCC Toolchain (Recommended)
 1. Download the PowerPC EABI toolchain from [SysProgs PowerPC Toolchains](https://gnutoolchains.com/powerpc-eabi/) (e.g., `powerpc-eabi-gcc4.9.0.exe` or newer).
-2. Install or extract it directly into the `compilers/GCC/` directory next to the `CemuPatchCompiler.exe`. You can make this folder yourself, or run the program once.
-3. Verify that the files are located at:
-   - `compilers/GCC/bin/powerpc-eabi-gcc.exe`
-   - `compilers/GCC/bin/powerpc-eabi-objcopy.exe`
+2. Install or extract it on your system, then specify the path to the compiler in your `config.ini` file:
+   ```ini
+   [Compilers]
+   GCC = C:/SysGCC/powerpc-eabi/bin/powerpc-eabi-gcc.exe
+   ```
+   *(Alternatively, you can install the toolchain to a local `compilers/GCC` directory next to `CemuPatchCompiler.exe` for automatic detection).*
 
 ### PowerPC LLVM/Clang (Alternative)
-- Place a target-compatible LLVM/Clang toolchain in the `compilers/clang/` directory:
-  - `compilers/clang/bin/clang++.exe` (or `compilers/clang/clang++.exe`)
+1. Install a target-compatible LLVM/Clang toolchain.
+2. Specify the path to the compiler in your `config.ini` file:
+   ```ini
+   [Compilers]
+   Clang = C:/Path/To/LLVM/bin/clang++.exe
+   ```
+   *(Alternatively, you can place the toolchain in a local `compilers/clang` directory next to `CemuPatchCompiler.exe` for automatic detection).*
 
 ---
 
@@ -46,7 +53,7 @@ CemuPatchCompiler.exe "C:\Path\To\Source" "C:\Path\To\Output\final_patch.asm"
 ```
 
 ### Config File (`config.ini`)
-If run without command-line arguments and there are no C/C++ files in the current working directory, the tool falls back to the paths defined in `config.ini` (which is generated automatically with defaults if missing).
+If run without command-line arguments and there are no C/C++ files in the current working directory, the tool falls back to the paths defined in `config.ini` (which is generated automatically with defaults if missing, though the template directories themselves are not created).
 
 Example `config.ini`:
 ```ini
@@ -56,4 +63,9 @@ SourceDir = examples/camera
 
 ; Output file path for compiled assembly patch
 OutFile = examples/camera/patch_compiled.asm
+
+[Compilers]
+; [Optional] Custom compiler paths (relative to config or absolute)
+;GCC = compilers/GCC/bin/powerpc-eabi-gcc.exe
+;Clang = compilers/clang/bin/clang++.exe
 ```
