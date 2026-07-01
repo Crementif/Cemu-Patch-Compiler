@@ -69,9 +69,9 @@ inline void writeDefaultIniFile(const std::filesystem::path& path) {
 	}
 	file << "; Output file path for compiled assembly patch\r\n";
 	if (isBinDir) {
-		file << "OutFile = ../examples/camera/compiled.asm\r\n\r\n";
+		file << "OutFile = ../examples/camera/patch_compiled.asm\r\n\r\n";
 	} else {
-		file << "OutFile = examples/camera/compiled.asm\r\n\r\n";
+		file << "OutFile = examples/camera/patch_compiled.asm\r\n\r\n";
 	}
 }
 
@@ -519,12 +519,12 @@ int main(int argc, char* argv[])
 		if (std::filesystem::is_directory(argPath))
 		{
 			sourceDir = argPath;
-			outFile = argPath / "compiled.asm";
+			outFile = argPath / "patch_compiled.asm";
 		}
 		else
 		{
 			sourceDir = argPath.parent_path();
-			outFile = sourceDir / "compiled.asm";
+			outFile = sourceDir / "patch_compiled.asm";
 		}
 
 		if (argc > 2)
@@ -553,7 +553,7 @@ int main(int argc, char* argv[])
 		if (hasSourceFilesCwd)
 		{
 			sourceDir = ".";
-			outFile = "./compiled.asm";
+			outFile = "./patch_compiled.asm";
 		}
 		else
 		{
@@ -569,7 +569,7 @@ int main(int argc, char* argv[])
 			Config config = parseIniFile(configPath);
 			configDir = configPath.parent_path();
 			std::string srcDirStr = config.get("Paths", "SourceDir", "examples/camera");
-			std::string outValStr = config.get("Paths", "OutFile", "examples/camera/compiled.asm");
+			std::string outValStr = config.get("Paths", "OutFile", "examples/camera/patch_compiled.asm");
 
 			sourceDir = resolvePath(configDir, srcDirStr);
 			outFile = resolvePath(configDir, outValStr);

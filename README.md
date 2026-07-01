@@ -27,13 +27,13 @@ Before using `Cemu Patch Compiler`, you must place a PowerPC compiler toolchain 
 
 ### Drag & Drop
 You can drag a source folder or a single C/C++ file and drop it directly onto the `CemuPatchCompiler.exe` executable:
-- **Folder**: Compiles all `.cpp` and `.c` files in the folder and outputs to `compiled.asm` in that folder.
-- **File**: Compiles the file (and other files in its parent directory) and outputs to `compiled.asm` in the parent directory.
+- **Folder**: Compiles all `.cpp` and `.c` files in the folder and outputs to `patch_compiled.asm` in that folder.
+- **File**: Compiles the file (and other files in its parent directory) and outputs to `patch_compiled.asm` in the parent directory.
 
 ### Portable Folder Compilation
 If you place `CemuPatchCompiler.exe` next to some C/C++ files (such as `.cpp`, `.c`, `.h`, `.hpp` files) and run it:
 - The tool automatically detects C/C++ files in the current folder.
-- It compiles them and outputs to a local `compiled.asm` file in the same directory.
+- It compiles them and outputs to a local `patch_compiled.asm` file in the same directory.
 
 ### Command Line Interface (CLI)
 You can run the utility from a command prompt or script:
@@ -55,5 +55,5 @@ Example `config.ini`:
 SourceDir = examples/camera
 
 ; Output file path for compiled assembly patch
-OutFile = examples/camera/compiled.asm
+OutFile = examples/camera/patch_compiled.asm
 ```
