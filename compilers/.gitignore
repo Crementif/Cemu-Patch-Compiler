@@ -1,0 +1,12 @@
+# Ignore everything in this directory recursively
+*
+
+# Allow subdirectories to be traversed
+!*/
+
+# Keep .gitkeep files
+!.gitkeep
+
+# Keep .gitignore itself
+!.gitignore
+

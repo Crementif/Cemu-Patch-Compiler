@@ -30,3 +30,19 @@
 *.exe
 *.out
 *.app
+
+# Build directories and outputs
+bin/
+build/
+.vs/
+
+# GCC compiler suite (binaries/headers)
+SysGCC/
+
+# Temporary compiler files
+temp_assemble.s
+temp_assemble.o
+temp_assemble.bin
+
+# User configuration
+config.ini
