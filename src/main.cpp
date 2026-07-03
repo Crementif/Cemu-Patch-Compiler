@@ -234,6 +234,15 @@ public:
           if (!parser.parseSymbolName(lenFieldName, lenFieldNameLen))
             __debugbreak();
 
+          parser.skipWhitespaces();
+          if (parser.compareCharacter(0, ','))
+          {
+            parser.skipCharacters(1);
+            const char* alignFieldName;
+            int32_t alignFieldNameLen;
+            parser.parseSymbolName(alignFieldName, alignFieldNameLen);
+          }
+
           std::string_view svFieldLen(lenFieldName, lenFieldNameLen);
           outputTextFile.lines.emplace_back(std::format("{}:", svSymbolName));
           int lcommLen = std::atoi(std::string(svFieldLen).c_str());
@@ -273,6 +282,29 @@ public:
         // GCC assembly seems to imply it
         outputTextFile.lines.emplace_back(inputLine);
         outputTextFile.lines.emplace_back("\t.align 4");
+        continue;
+      }
+      if (parser.matchWordI(".zero")) {
+        uint32_t zeroSize;
+        if (!parser.parseU32(zeroSize))
+          __debugbreak();
+        if (zeroSize > 0) {
+          uint32_t numInts = zeroSize / 4;
+          uint32_t remainder = zeroSize % 4;
+          if (numInts > 0) {
+            std::string line = "\t.int 0";
+            for (uint32_t i = 1; i < numInts; i++)
+              line.append(",0");
+            outputTextFile.lines.emplace_back(std::move(line));
+          }
+          if (remainder >= 2) {
+            outputTextFile.lines.emplace_back("\t.short 0");
+            remainder -= 2;
+          }
+          if (remainder == 1) {
+            outputTextFile.lines.emplace_back("\t.byte 0");
+          }
+        }
         continue;
       }
       // and some instructions also need their syntax adjusted
