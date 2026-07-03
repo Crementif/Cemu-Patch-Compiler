@@ -1,5 +1,6 @@
 #include "common.h"
 #include "InstructionAssembler.h"
+#include "StringParser.h"
 
 struct DissectedInstruction
 {
@@ -112,6 +113,31 @@ struct DissectedMemOperand
 	}
 };
 
+static bool maskToMBME(uint32_t mask, int& mb, int& me)
+{
+	if (mask == 0)
+		return false;
+
+	int low = 0;
+	while (low < 32 && ((mask >> low) & 1) == 0)
+		low++;
+
+	int high = 31;
+	while (high >= 0 && ((mask >> high) & 1) == 0)
+		high--;
+
+	uint32_t expected = 0;
+	for (int i = low; i <= high; i++)
+		expected |= (1u << i);
+
+	if (mask != expected)
+		return false;
+
+	mb = 31 - high;
+	me = 31 - low;
+	return true;
+}
+
 std::string AsmUpdater_fixInstruction(std::string_view instructionText)
 {
 	DissectedInstruction di;
@@ -147,24 +173,20 @@ std::string AsmUpdater_fixInstruction(std::string_view instructionText)
 
 		if (di.name == "RLWINM" && di.operandStr.size() == 4)
 		{
-			// gcc will emit rlwinm with a bitmask
-			// rlwinm r9,r9,0,0xff -> rlwinm r0, r0, 0, 24, 31
-			if (di.operandStr[3] == "0xff")
+			// gcc will emit rlwinm with a bitmask as the 4th operand
+			// convert mask to MB/ME form that the Cemu assembler expects
+			StringTokenParser maskParser(di.operandStr[3]);
+			uint32_t maskVal;
+			if (maskParser.parseU32(maskVal))
 			{
-				return std::format("\trlwinm {}, {}, {}, 24, 31", di.operandStr[0], di.operandStr[1], di.operandStr[2]);
+				int mb, me;
+				if (maskToMBME(maskVal, mb, me))
+				{
+					return std::format("\trlwinm {}, {}, {}, {}, {}", di.operandStr[0], di.operandStr[1], di.operandStr[2], mb, me);
+				}
 			}
-			else if (di.operandStr[3] == "0xffff")
-			{
-				return std::format("\trlwinm {}, {}, {}, 16, 31", di.operandStr[0], di.operandStr[1], di.operandStr[2]);
-			}
-			else if (di.operandStr[3] == "1" || di.operandStr[3] == "0x1")
-			{
-				return std::format("\trlwinm {}, {}, {}, 31, 31", di.operandStr[0], di.operandStr[1], di.operandStr[2]);
-			}
-			else
-			{
-				__debugbreak();
-			}
+			printf("Warning: RLWINM with unsupported mask value '%.*s'\n", (int)di.operandStr[3].size(), di.operandStr[3].data());
+			return std::string(instructionText);
 		}
 
 		// replace bnl with bge (the former alias is not supported)
