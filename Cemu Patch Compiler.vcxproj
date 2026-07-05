@@ -89,7 +89,7 @@
     <ClCompile Include="src\AsmUpdater.cpp" />
     <ClCompile Include="src\InstructionAssembler.cpp" />
     <ClCompile Include="examples\mathStuff\calculate.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="src\main.cpp" />
   </ItemGroup>
@@ -97,16 +97,16 @@
     <ClInclude Include="src\common.h" />
     <ClInclude Include="src\InstructionAssembler.h" />
     <ClInclude Include="examples\mathStuff\core.h">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClInclude>
     <ClInclude Include="src\StringParser.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="examples\mathStuff\final.asm">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild>true</ExcludedFromBuild>
     </None>
     <None Include="examples\mathStuff\temp_asm.s">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild>true</ExcludedFromBuild>
     </None>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
