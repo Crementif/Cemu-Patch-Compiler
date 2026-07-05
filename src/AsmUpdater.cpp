@@ -148,7 +148,7 @@ std::string AsmUpdater_fixInstruction(std::string_view instructionText)
 			std::string hexVal = assembleInstructionToBytes(instructionText);
 			if (!hexVal.empty())
 			{
-				return std::format("\t.int {}", hexVal);
+				return std::format("\t.int {} ; {}", hexVal, trimWhitespaces(instructionText));
 			}
 		}
 

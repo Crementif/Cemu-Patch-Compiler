@@ -2,7 +2,8 @@
 #include "common.h"
 
 const char* forbiddenInstructions[] = {
-	"MFCR"
+	"MFCR",
+	"MTCRF"
 };
 
 bool isForbiddenInstruction(const char* name)
