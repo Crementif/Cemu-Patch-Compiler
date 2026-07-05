@@ -277,6 +277,26 @@ public:
         outputTextFile.lines.emplace_back(std::format("\t.align {}", 1 << val));
         continue;
       }
+      if (parser.matchWordI(".ascii")) {
+        parser.skipWhitespaces();
+        std::string_view sv = parser.getView();
+        if (!sv.empty() && sv.front() == '"') {
+          sv.remove_prefix(1);
+          size_t endQuote = sv.rfind('"');
+          if (endQuote != std::string_view::npos)
+            sv = sv.substr(0, endQuote);
+          if (!sv.empty()) {
+            std::string line = ".byte ";
+            for (size_t i = 0; i < sv.size(); i++) {
+              if (i > 0)
+                line.append(",");
+              line.append(std::to_string((unsigned char)sv[i]));
+            }
+            outputTextFile.lines.emplace_back(std::move(line));
+          }
+        }
+        continue;
+      }
       if (parser.matchWordI(".string")) {
         // append an extra .align 4 after the string
         // GCC assembly seems to imply it
