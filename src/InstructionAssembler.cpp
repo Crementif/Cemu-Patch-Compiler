@@ -3,7 +3,8 @@
 
 const char* forbiddenInstructions[] = {
 	"MFCR",
-	"MTCRF"
+	"MTCRF",
+	"MCRF"
 };
 
 bool isForbiddenInstruction(const char* name)
