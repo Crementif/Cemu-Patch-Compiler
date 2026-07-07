@@ -46,3 +46,9 @@ temp_assemble.bin
 
 # User configuration
 config.ini
+
+vcpkg_installed/
+
+cmake-build-*/
+
+.idea/

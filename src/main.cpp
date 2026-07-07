@@ -1,6 +1,16 @@
 #include "StringParser.h"
 #include "common.h"
 
+#include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/CompilerInvocation.h"
+#include "clang/Frontend/TextDiagnosticPrinter.h"
+#include "clang/CodeGen/CodeGenAction.h"
+#include "clang/Basic/DiagnosticOptions.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
+#include "clang/Frontend/Utils.h"
+#include "llvm/Support/CommandLine.h"
+
 struct TextFile {
   std::vector<std::string> lines;
 };
@@ -53,9 +63,90 @@ bool util_stringReplace(std::string &str, const std::string &from,
 }
 
 std::string AsmUpdater_fixInstruction(std::string_view instructionText);
-std::string AsmUpdater_changeRegisterSyntax(std::string &instructionText);
-std::string AsmUpdater_fixDotLabels(uint64_t unitHash,
-                                    std::string instructionText);
+std::string AsmUpdater_fixClangLocalLabels(uint64_t unitHash,
+                                           std::string instructionText);
+
+static bool compileCppWithEmbeddedClang(const std::string& sourceFilePath, const std::string& outputFilePath) {
+  static bool targetsInitialized = false;
+  if (!targetsInitialized) {
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmPrinters();
+    llvm::InitializeAllAsmParsers();
+
+    int fake_argc = 4;
+    const char* fake_argv[] = {
+        "CemuPatchCompiler",
+        "-ppc-asm-full-reg-names",
+        "-disable-ppc-cmp-opt",
+        "-enable-ppc-branch-coalesce"
+    };
+    llvm::cl::ParseCommandLineOptions(fake_argc, fake_argv);
+
+    targetsInitialized = true;
+  }
+
+  clang::CompilerInstance clang;
+  clang::DiagnosticOptions *diagOpts = new clang::DiagnosticOptions();
+  clang::IntrusiveRefCntPtr<clang::DiagnosticsEngine> diags =
+      clang::CompilerInstance::createDiagnostics(diagOpts, new clang::TextDiagnosticPrinter(llvm::errs(), diagOpts));
+  clang.setDiagnostics(diags.get());
+
+  std::filesystem::path sourcePath(sourceFilePath);
+  std::string ext = sourcePath.extension().string();
+  bool forceCpp = (ext == ".c" || ext == ".h");
+
+  std::vector<const char*> args = {
+      "clang",
+      "-target", "powerpc-eabi",
+      "-mcpu=750",
+      "-m32",
+      "-mbig-endian",
+      "-mno-crbits",
+      "-ffreestanding",
+      "-fno-autolink",
+      "-fno-data-sections",
+      "-fno-function-sections",
+      "-fno-exceptions",
+      "-fno-verbose-asm",
+      "-fno-rtti",
+      "-fbasic-block-sections=none",
+      "-O1",
+      "-fvisibility=default",
+      "-femit-all-decls",
+      "-fno-inline",
+      "-std=c++17",
+      "-mllvm", "-ppc-asm-full-reg-names",
+      "-mllvm", "-disable-ppc-cmp-opt",
+      "-mllvm", "-enable-ppc-branch-coalesce"
+  };
+
+  if (forceCpp) {
+    args.push_back("-x");
+    args.push_back("c++");
+  }
+
+  args.push_back("-S");
+  args.push_back(sourceFilePath.c_str());
+  args.push_back("-o");
+  args.push_back(outputFilePath.c_str());
+
+  clang::CreateInvocationOptions opts;
+  opts.Diags = diags;
+  std::shared_ptr<clang::CompilerInvocation> invocation =
+      clang::createInvocation(args, opts);
+  if (!invocation) {
+    return false;
+  }
+  invocation->getFrontendOpts().OutputFile = outputFilePath;
+  clang.setInvocation(invocation);
+
+  std::unique_ptr<clang::FrontendAction> action = std::make_unique<clang::EmitAssemblyAction>();
+  if (!clang.ExecuteAction(*action)) {
+    return false;
+  }
+  return true;
+}
 
 class AssemblyConverter {
 public:
@@ -75,114 +166,11 @@ public:
                   std::string_view outputFilePath) {
     std::filesystem::path sourcePath(sourceFilePath);
     printf("Compiling %s...\n", sourcePath.filename().string().c_str());
-    SECURITY_ATTRIBUTES saAttr;
+    fflush(stdout);
 
-    HANDLE g_hChildStd_IN_Rd = NULL;
-    HANDLE g_hChildStd_IN_Wr = NULL;
-
-    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
-    saAttr.bInheritHandle = TRUE;
-    saAttr.lpSecurityDescriptor = NULL;
-
-    if (!CreatePipe(&g_hChildStd_IN_Rd, &g_hChildStd_IN_Wr, &saAttr, 0))
-      __debugbreak();
-    if (!SetHandleInformation(g_hChildStd_IN_Wr, HANDLE_FLAG_INHERIT, 0))
-      __debugbreak();
-
-    std::string ext = sourcePath.extension().string();
-    bool forceCpp = (ext == ".c" || ext == ".h");
-
-    // create the process
-    std::string cmdline;
-    if (g_compilerMode == CompilerMode::Clang) {
-      cmdline.append(g_clangPath);
-      cmdline.append(
-          " -target ppc32 -mno-crbits -ffreestanding -fno-autolink "
-          "-fno-data-sections -fno-function-sections -fno-exceptions");
-      cmdline.append(
-          " -fno-verbose-asm -fno-rtti -fbasic-block-sections=none -O1 "
-          "-fvisibility=default -femit-all-decls -fno-inline -std=c++17");
-      cmdline.append(
-          " -mllvm -ppc-asm-full-reg-names -mllvm -disable-ppc-cmp-opt -mllvm "
-          "-enable-ppc-branch-coalesce ");
-      if (forceCpp)
-        cmdline.append(" -x c++");
-      cmdline.append(" -S \"");
-      cmdline.append(sourceFilePath);
-      cmdline.append("\"");
-      cmdline.append(" --output \"");
-      cmdline.append(outputFilePath);
-      cmdline.append("\"");
-    } else if (g_compilerMode == CompilerMode::GCC) {
-      cmdline.append(g_gccPath);
-      cmdline.append(" -emit-llvm -O2 -mcpu=750 -mbig-endian -m32 -fno-rtti "
-                     "-fno-ident -fno-toplevel-reorder -mregnames "
-                     "-fno-function-sections -ffreestanding");
-      cmdline.append(
-          " -fno-data-sections -msdata=none -mno-sdata -fno-exceptions "
-          "-fno-omit-frame-pointer -fno-asynchronous-unwind-tables");
-      cmdline.append(" -mno-powerpc-gpopt -mcall-eabi");
-      cmdline.append(" -falign-functions=4 -falign-labels=4 -falign-jumps=0 "
-                     "-falign-loops=0 -std=c++11");
-      if (forceCpp)
-        cmdline.append(" -x c++");
-      cmdline.append(" -S \"");
-      cmdline.append(sourceFilePath);
-      cmdline.append("\"");
-      cmdline.append(" --output \"");
-      cmdline.append(outputFilePath);
-      cmdline.append("\"");
-    } else {
-      printf("Error: No compiler found! Please install GCC or Clang.\n");
+    if (!compileCppWithEmbeddedClang(std::string(sourceFilePath), std::string(outputFilePath))) {
+      printf("Error: Compilation failed using embedded Clang.\n");
       ExitProcess(1);
-    }
-
-    printf("Executing command: %s\n", cmdline.c_str());
-    fflush(stdout);
-
-    PROCESS_INFORMATION piProcInfo;
-    STARTUPINFOA siStartInfo;
-    BOOL bSuccess = FALSE;
-    ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
-    ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
-    siStartInfo.cb = sizeof(STARTUPINFO);
-    siStartInfo.hStdError = GetStdHandle(STD_OUTPUT_HANDLE);
-    siStartInfo.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-    siStartInfo.hStdInput = g_hChildStd_IN_Rd;
-    siStartInfo.dwFlags |= STARTF_USESTDHANDLES;
-
-    bSuccess = CreateProcessA(NULL,
-                              (LPSTR)cmdline.c_str(), // command line
-                              NULL, // process security attributes
-                              NULL, // primary thread security attributes
-                              TRUE, // handles are inherited
-                              0,    // creation flags
-                              NULL, // use parent's environment
-                              NULL, // use parent's current directory
-                              &siStartInfo, // STARTUPINFO pointer
-                              &piProcInfo); // receives PROCESS_INFORMATION
-
-    if (!bSuccess) {
-      printf("CreateProcessA failed! Error: %d\n", GetLastError());
-      fflush(stdout);
-      __debugbreak();
-    } else {
-      CloseHandle(piProcInfo.hThread);
-      CloseHandle(g_hChildStd_IN_Wr);
-    }
-
-    // wait for return code
-    WaitForSingleObject(piProcInfo.hProcess, INFINITE);
-    DWORD exitCode;
-    if (GetExitCodeProcess(piProcInfo.hProcess, &exitCode) == FALSE) {
-      __debugbreak();
-    }
-    CloseHandle(piProcInfo.hProcess);
-    printf("Command exited with code: %d\n", exitCode);
-    fflush(stdout);
-    if (exitCode != 0) {
-      Sleep(1000 * 3);
-      ExitProcess(exitCode);
     }
   }
 
@@ -213,61 +201,9 @@ public:
           parser.matchWordI(".addrsig_sym") || parser.matchWordI(".machine")) {
         continue;
       }
-      if (g_compilerMode == CompilerMode::GCC) {
-        if (parser.matchWordI(".align 2"))
-          continue;
-        if (parser.matchWordI(".gnu_attribute"))
-          continue;
-        if (parser.matchWordI(".lcomm")) {
-          // translate this to a data variable
-          const char *symbolName;
-          int32_t symbolNameLen;
-          if (!parser.parseSymbolName(symbolName, symbolNameLen))
-            __debugbreak();
-          std::string_view svSymbolName(symbolName, symbolNameLen);
-          parser.skipWhitespaces();
-          if (!parser.compareCharacter(0, ','))
-            __debugbreak();
-          parser.skipCharacters(1);
-          const char *lenFieldName;
-          int32_t lenFieldNameLen;
-          if (!parser.parseSymbolName(lenFieldName, lenFieldNameLen))
-            __debugbreak();
 
-          parser.skipWhitespaces();
-          if (parser.compareCharacter(0, ','))
-          {
-            parser.skipCharacters(1);
-            const char* alignFieldName;
-            int32_t alignFieldNameLen;
-            parser.parseSymbolName(alignFieldName, alignFieldNameLen);
-          }
-
-          std::string_view svFieldLen(lenFieldName, lenFieldNameLen);
-          outputTextFile.lines.emplace_back(std::format("{}:", svSymbolName));
-          int lcommLen = std::atoi(std::string(svFieldLen).c_str());
-          if ((lcommLen % 4) != 0) {
-            printf("lcomm unaligned. Padding to multiple of 4. Unsure if this "
-                   "is ok\n");
-            while ((lcommLen % 4) != 0)
-              lcommLen++;
-          }
-          int numWords = lcommLen / 4;
-          if (numWords <= 0)
-            __debugbreak();
-          outputTextFile.lines.emplace_back(".uint 0");
-          for (int i = 1; i < numWords; i++) {
-            outputTextFile.lines.back().append(",0");
-          }
-          continue;
-        }
-
-        inputLine = AsmUpdater_changeRegisterSyntax(inputLine);
-        inputLine = AsmUpdater_fixDotLabels(
-            unitHash,
-            inputLine); // this one could potentially be used for clang too
-        parser = StringTokenParser(inputLine.data(), (int32_t)inputLine.size());
-      }
+      inputLine = AsmUpdater_fixClangLocalLabels(unitHash, inputLine);
+      parser = StringTokenParser(inputLine.data(), (int32_t)inputLine.size());
 
       // some commands have to be translated
       if (parser.matchWordI(".p2align")) {
@@ -299,7 +235,6 @@ public:
       }
       if (parser.matchWordI(".string")) {
         // append an extra .align 4 after the string
-        // GCC assembly seems to imply it
         outputTextFile.lines.emplace_back(inputLine);
         outputTextFile.lines.emplace_back("\t.align 4");
         continue;
@@ -338,9 +273,6 @@ public:
         // .long -> .int
         util_stringReplace(inputLine, ".long", ".int");
       }
-
-      util_stringReplace(inputLine, ".Lfunc_", "__Lfunc_");
-      util_stringReplace(inputLine, ".LBB", "__LBB");
 
       // import directives
       util_stringReplace(inputLine, "_IMPORT_GX2_", "import.gx2.");
@@ -455,8 +387,6 @@ int main(int argc, char *argv[]) {
     configDir = configPath.parent_path();
   }
 
-  detectCompiler(configDir, config);
-
   std::filesystem::path sourceDir = "";
   std::filesystem::path outFile = "";
 
@@ -498,7 +428,6 @@ int main(int argc, char *argv[]) {
         writeDefaultIniFile(configPath);
         config = parseIniFile(configPath);
         configDir = configPath.parent_path();
-        detectCompiler(configDir, config);
       }
 
       std::string srcDirStr =

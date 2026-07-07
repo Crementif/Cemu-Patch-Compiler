@@ -227,27 +227,13 @@ std::string AsmUpdater_fixInstruction(std::string_view instructionText)
 	return std::string(instructionText);
 }
 
-std::string AsmUpdater_changeRegisterSyntax(std::string& instructionText)
-{
-	// %r9, %f0
-	std::regex registerMatchRegex("%((?:cr|r|f)\\d\\d?)", std::regex::ECMAScript);
-	return std::regex_replace(instructionText, registerMatchRegex, "$1");
-}
-
-std::string AsmUpdater_fixDotLabels(uint64_t unitHash, std::string instructionText)
+std::string AsmUpdater_fixClangLocalLabels(uint64_t unitHash, std::string instructionText)
 {
 	// labels starting with a dot are private/local/weak labels that aren't meant to be globally visible
-	// to avoid name conflict between multiple translation unit we add a file-specific prefix to each label
-	std::string replacement = std::format("_{:016x}_$1", unitHash);
+	// to avoid name conflict between multiple translation units we add a file-specific prefix to each label
+	std::string replacement = std::format("_{:016x}_L$1", unitHash);
 
-	// lis r9,.LC0@ha
-	// .LC0:
-	// .int 1056964608
-	std::regex constantMatchRegex(R"(\.(LC\d+))", std::regex::ECMAScript);
-	instructionText = std::regex_replace(instructionText, constantMatchRegex, replacement);
-
-	// .L101:
-	// 	b .L101
-	std::regex branchingGotoLabelsMatchRegex(R"(\.(L\d+))", std::regex::ECMAScript);
-	return std::regex_replace(instructionText, branchingGotoLabelsMatchRegex, replacement);
+	// matches `.L` followed by letters/digits/underscores
+	std::regex labelMatchRegex(R"(\.L([a-zA-Z0-9_]+))", std::regex::ECMAScript);
+	return std::regex_replace(instructionText, labelMatchRegex, replacement);
 }

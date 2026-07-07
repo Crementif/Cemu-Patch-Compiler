@@ -1,0 +1,14 @@
+{
+  "name": "cemu-patch-compiler",
+  "version": "1.0.0",
+  "dependencies": [
+    {
+      "name": "llvm",
+      "default-features": false,
+      "features": [
+        "clang",
+        "target-powerpc"
+      ]
+    }
+  ]
+}

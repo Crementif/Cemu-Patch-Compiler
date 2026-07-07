@@ -9,6 +9,9 @@ on:
 jobs:
   build:
     runs-on: windows-2025-vs2026
+    env:
+      VCPKG_INSTALLATION_ROOT: C:\vcpkg
+      VCPKG_DOWNLOADS: ${{ github.workspace }}/vcpkg-downloads
     strategy:
       matrix:
         configuration: [Debug, Release]
@@ -16,13 +19,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: microsoft/setup-msbuild@v2
+      - name: Cache vcpkg_installed
+        uses: actions/cache@v4
+        id: cache-vcpkg
+        with:
+          path: |
+            vcpkg_installed
+            vcpkg-downloads
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
 
-      - name: Build ${{ matrix.configuration }}|x64
-        run: msbuild "Cemu Patch Compiler.sln" /p:Configuration=${{ matrix.configuration }} /p:Platform=x64
+      - name: Configure CMake
+        run: >
+          cmake -B build -S . 
+          -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_INSTALLATION_ROOT }}/scripts/buildsystems/vcpkg.cmake" 
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+
+      - name: Build with CMake
+        run: cmake --build build --config ${{ matrix.configuration }}
 
       - name: Upload ${{ matrix.configuration }} artifact
         uses: actions/upload-artifact@v4
         with:
           name: CemuPatchCompiler-${{ matrix.configuration }}
-          path: bin/CemuPatchCompiler-${{ matrix.configuration == 'Debug' && 'debug' || 'release' }}.exe
+          path: build/${{ matrix.configuration }}/CemuPatchCompiler-${{ matrix.configuration == 'Debug' && 'debug' || 'release' }}.exe
+
+

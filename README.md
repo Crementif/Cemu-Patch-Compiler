@@ -4,27 +4,11 @@
 
 ---
 
-## 1. Setup: PowerPC Compiler Installation
+## 1. PowerPC Compiler Support
 
-Before using `Cemu Patch Compiler`, you must configure a PowerPC compiler toolchain (GCC is recommended).
+`Cemu Patch Compiler` has a built-in, statically-linked LLVM and Clang compiler targeting 32-bit PowerPC (PPC32). 
 
-### PowerPC GCC Toolchain (Recommended)
-1. Download the PowerPC EABI toolchain from [SysProgs PowerPC Toolchains](https://gnutoolchains.com/powerpc-eabi/) (e.g., `powerpc-eabi-gcc4.9.0.exe` or newer).
-2. Install or extract it on your system, then specify the path to the compiler in your `config.ini` file:
-   ```ini
-   [Compilers]
-   GCC = C:/SysGCC/powerpc-eabi/bin/powerpc-eabi-gcc.exe
-   ```
-   *(Alternatively, you can install the toolchain to a local `compilers/GCC` directory next to `CemuPatchCompiler.exe` for automatic detection).*
-
-### PowerPC LLVM/Clang (Alternative)
-1. Install a target-compatible LLVM/Clang toolchain.
-2. Specify the path to the compiler in your `config.ini` file:
-   ```ini
-   [Compilers]
-   Clang = C:/Path/To/LLVM/bin/clang++.exe
-   ```
-   *(Alternatively, you can place the toolchain in a local `compilers/clang` directory next to `CemuPatchCompiler.exe` for automatic detection).*
+There is **no setup required**! You do not need to download or install external GCC or Clang toolchains. The compiler is fully self-contained.
 
 ---
 
@@ -63,9 +47,4 @@ SourceDir = examples/camera
 
 ; Output file path for compiled assembly patch
 OutFile = examples/camera/patch_compiled.asm
-
-[Compilers]
-; [Optional] Custom compiler paths (relative to config or absolute)
-;GCC = compilers/GCC/bin/powerpc-eabi-gcc.exe
-;Clang = compilers/clang/bin/clang++.exe
 ```
