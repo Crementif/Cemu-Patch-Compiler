@@ -8,6 +8,7 @@
 #include "clang/Basic/DiagnosticOptions.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/ADT/SmallVector.h"
 #include "clang/Frontend/Utils.h"
 #include "llvm/Support/CommandLine.h"
 
@@ -29,6 +30,31 @@ std::unique_ptr<TextFile> util_readTextFile(std::string_view path) {
       line.pop_back();
     }
     // Remove leading '\r' if present
+    if (!line.empty() && line.front() == '\r') {
+      line.erase(line.begin());
+    }
+    textFile->lines.push_back(std::move(line));
+  }
+  return textFile;
+}
+
+inline std::unique_ptr<TextFile> parseAssemblyFromMemory(std::string_view content) {
+  auto textFile = std::make_unique<TextFile>();
+  size_t pos = 0;
+  while (pos < content.size()) {
+    size_t nextNL = content.find('\n', pos);
+    std::string_view lineSV;
+    if (nextNL == std::string_view::npos) {
+      lineSV = content.substr(pos);
+      pos = content.size();
+    } else {
+      lineSV = content.substr(pos, nextNL - pos);
+      pos = nextNL + 1;
+    }
+    std::string line(lineSV);
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back();
+    }
     if (!line.empty() && line.front() == '\r') {
       line.erase(line.begin());
     }
@@ -66,7 +92,7 @@ std::string AsmUpdater_fixInstruction(std::string_view instructionText);
 std::string AsmUpdater_fixClangLocalLabels(uint64_t unitHash,
                                            std::string instructionText);
 
-static bool compileCppWithEmbeddedClang(const std::string& sourceFilePath, const std::string& outputFilePath) {
+static std::unique_ptr<TextFile> compileCppWithEmbeddedClang(const std::string& sourceFilePath) {
   static bool targetsInitialized = false;
   if (!targetsInitialized) {
     llvm::InitializeAllTargets();
@@ -129,23 +155,29 @@ static bool compileCppWithEmbeddedClang(const std::string& sourceFilePath, const
   args.push_back("-S");
   args.push_back(sourceFilePath.c_str());
   args.push_back("-o");
-  args.push_back(outputFilePath.c_str());
+  args.push_back("-");
 
   clang::CreateInvocationOptions opts;
   opts.Diags = diags;
   std::shared_ptr<clang::CompilerInvocation> invocation =
       clang::createInvocation(args, opts);
   if (!invocation) {
-    return false;
+    return nullptr;
   }
-  invocation->getFrontendOpts().OutputFile = outputFilePath;
+  invocation->getFrontendOpts().OutputFile = "-";
   clang.setInvocation(invocation);
+
+  llvm::SmallVector<char, 0> byteVector;
+  clang.setOutputStream(std::make_unique<llvm::raw_svector_ostream>(byteVector));
 
   std::unique_ptr<clang::FrontendAction> action = std::make_unique<clang::EmitAssemblyAction>();
   if (!clang.ExecuteAction(*action)) {
-    return false;
+    return nullptr;
   }
-  return true;
+
+  (void)clang.takeOutputStream();
+
+  return parseAssemblyFromMemory(std::string_view(byteVector.data(), byteVector.size()));
 }
 
 class AssemblyConverter {
@@ -162,16 +194,20 @@ public:
     m_outputTextFile->lines.emplace_back("");
   }
 
-  void compileCpp(std::string_view sourceFilePath,
-                  std::string_view outputFilePath) {
+  void convertCppToCemu(std::string_view sourceFilePath,
+                        std::string_view moduleName) {
     std::filesystem::path sourcePath(sourceFilePath);
     printf("Compiling %s...\n", sourcePath.filename().string().c_str());
     fflush(stdout);
 
-    if (!compileCppWithEmbeddedClang(std::string(sourceFilePath), std::string(outputFilePath))) {
+    auto inputFile = compileCppWithEmbeddedClang(std::string(sourceFilePath));
+    if (!inputFile) {
       printf("Error: Compilation failed using embedded Clang.\n");
       ExitProcess(1);
     }
+
+    findLabels(*inputFile);
+    convertClangToCemu(moduleName, *inputFile, *m_outputTextFile);
   }
 
   void convertClangToCemu(std::string_view moduleName,
@@ -317,13 +353,6 @@ public:
     }
   }
 
-  void translateClangAssembly(std::string_view path,
-                              std::string_view moduleName) {
-    auto inputFile = util_readTextFile(path);
-    findLabels(*inputFile);
-    convertClangToCemu(moduleName, *inputFile, *m_outputTextFile);
-  }
-
 private:
   std::unique_ptr<TextFile> m_outputTextFile;
 };
@@ -331,14 +360,6 @@ private:
 void processDirectory(std::string_view path, std::string_view outputPatchFile) {
   AssemblyConverter converter;
   converter.start();
-
-  std::string clangAssemblyFilePath;
-  clangAssemblyFilePath.append(path);
-  if (!clangAssemblyFilePath.empty() && clangAssemblyFilePath.back() != '/' &&
-      clangAssemblyFilePath.back() != '\\') {
-    clangAssemblyFilePath.append("/");
-  }
-  clangAssemblyFilePath.append("temp_asm.s");
 
   int compiledCount = 0;
   std::error_code ec;
@@ -349,12 +370,9 @@ void processDirectory(std::string_view path, std::string_view outputPatchFile) {
     auto ext = entryPath.extension();
     if (ext != ".cpp" && ext != ".c" && ext != ".cc" && ext != ".cxx")
       continue;
-    if (entryPath.filename() == "temp_asm.s")
-      continue;
 
-    converter.compileCpp(entryPath.string(), clangAssemblyFilePath);
-    converter.translateClangAssembly(clangAssemblyFilePath,
-                                     entryPath.filename().generic_string());
+    converter.convertCppToCemu(entryPath.string(),
+                               entryPath.filename().generic_string());
     compiledCount++;
   }
 
@@ -364,9 +382,6 @@ void processDirectory(std::string_view path, std::string_view outputPatchFile) {
     printf("No source files (.cpp, .c, .cc, .cxx) found in %s\n",
            std::string(path).c_str());
   }
-
-  // Delete temporary file
-  std::filesystem::remove(clangAssemblyFilePath, ec);
 }
 
 int main(int argc, char *argv[]) {
