@@ -12,16 +12,13 @@ jobs:
     env:
       VCPKG_INSTALLATION_ROOT: C:\vcpkg
       VCPKG_DOWNLOADS: ${{ github.workspace }}/vcpkg-downloads
-    strategy:
-      matrix:
-        configuration: [Debug, Release]
 
     steps:
       - uses: actions/checkout@v7
 
       - name: Cache vcpkg_installed
         uses: actions/cache@v4
-        id: cache-vcpkg
+        id: cache-vpkg
         with:
           path: |
             vcpkg_installed
@@ -35,12 +32,12 @@ jobs:
           -DVCPKG_TARGET_TRIPLET=x64-windows-static
 
       - name: Build with CMake
-        run: cmake --build build --config ${{ matrix.configuration }}
+        run: cmake --build build --config Release
 
-      - name: Upload ${{ matrix.configuration }} artifact
+      - name: Upload Release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CemuPatchCompiler-${{ matrix.configuration }}
-          path: build/${{ matrix.configuration }}/CemuPatchCompiler-${{ matrix.configuration == 'Debug' && 'debug' || 'release' }}.exe
+          name: CemuPatchCompiler-Release
+          path: build/Release/CemuPatchCompiler-release.exe
 
 
