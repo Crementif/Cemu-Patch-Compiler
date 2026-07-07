@@ -11,6 +11,10 @@
 #include "llvm/ADT/SmallVector.h"
 #include "clang/Frontend/Utils.h"
 #include "llvm/Support/CommandLine.h"
+#include "clang/Lex/PreprocessorOptions.h"
+#include "llvm/Support/MemoryBuffer.h"
+
+
 
 struct TextFile {
   std::vector<std::string> lines;
@@ -164,6 +168,22 @@ static std::unique_ptr<TextFile> compileCppWithEmbeddedClang(const std::string& 
   if (!invocation) {
     return nullptr;
   }
+  // Inject PATCH_* macros as an implicit virtual header included in all compiles.
+  std::string macroDefinitions = 
+      "#pragma once\n"
+      "#define _CEMU_PATCH_STRINGIFY(x) #x\n"
+      "#define _CEMU_PATCH_TOSTRING(x) _CEMU_PATCH_STRINGIFY(x)\n"
+      "#define PATCH_NOP(addr) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = nop\")\n"
+      "#define PATCH_JUMP_BLA(addr, func) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = bla \" #func)\n"
+      "#define PATCH_WRITE(addr, instr) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = \" instr)\n"
+      "#define PATCH_INT(addr, value) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = .int \" _CEMU_PATCH_TOSTRING(value))\n"
+      "#define PATCH_FLOAT(addr, value) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = .float \" _CEMU_PATCH_TOSTRING(value))\n";
+
+  invocation->getPreprocessorOpts().Includes.push_back("C:/__cemu_patch_macros.h");
+  auto buf = llvm::MemoryBuffer::getMemBufferCopy(macroDefinitions, "C:/__cemu_patch_macros.h");
+  invocation->getPreprocessorOpts().addRemappedFile("C:/__cemu_patch_macros.h", buf.release());
+  invocation->getPreprocessorOpts().RetainRemappedFileBuffers = true;
+
   invocation->getFrontendOpts().OutputFile = "-";
   clang.setInvocation(invocation);
 
@@ -226,6 +246,21 @@ public:
     }
 
     for (auto inputLine : inputFile.lines) {
+      // check for patch directive markers emitted by PATCH_* macros
+      {
+        size_t markerPos = inputLine.find("# __CEMU_PATCH:");
+        if (markerPos != std::string::npos) {
+          std::string directive = inputLine.substr(markerPos + 15);
+          // trim leading whitespace
+          while (!directive.empty() &&
+                 (directive.front() == ' ' || directive.front() == '\t'))
+            directive.erase(directive.begin());
+          if (!directive.empty())
+            m_patchDirectives.push_back(directive);
+          continue;
+        }
+      }
+
       StringTokenParser parser(inputLine.data(), (int32_t)inputLine.size());
       // check for directives that we can skip
       parser.skipWhitespaces();
@@ -353,8 +388,22 @@ public:
     }
   }
 
+  void finalize() {
+    if (!m_patchDirectives.empty()) {
+      m_outputTextFile->lines.emplace_back("");
+      m_outputTextFile->lines.emplace_back("; --- Address Patches ---");
+      for (const auto &directive : m_patchDirectives) {
+        m_outputTextFile->lines.emplace_back(directive);
+      }
+      printf("Emitted %d address patch directive(s).\n",
+             (int)m_patchDirectives.size());
+      fflush(stdout);
+    }
+  }
+
 private:
   std::unique_ptr<TextFile> m_outputTextFile;
+  std::vector<std::string> m_patchDirectives;
 };
 
 void processDirectory(std::string_view path, std::string_view outputPatchFile) {
@@ -377,6 +426,7 @@ void processDirectory(std::string_view path, std::string_view outputPatchFile) {
   }
 
   if (compiledCount > 0) {
+    converter.finalize();
     util_writeFile(outputPatchFile, converter.getOutput());
   } else {
     printf("No source files (.cpp, .c, .cc, .cxx) found in %s\n",

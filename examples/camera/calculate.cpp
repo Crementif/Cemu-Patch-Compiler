@@ -1,5 +1,18 @@
 #include "core.h"
 
+// Example: NOP out an instruction at a game address
+PATCH_NOP(0x023F90E0);
+
+// Example: overwrite a float constant in the game
+PATCH_FLOAT(0x101E55F8, 3.0);
+
+// Example: overwrite a 32-bit value in the game
+PATCH_INT(0x10416BF0, 0x00000000);
+
+// Example: write a specific instruction at a game address
+PATCH_WRITE(0x02E1905C, "li r3, 0");
+
+
 float sqrtf(float n) {
     float x = n;
     x = 0.5 * (x + (n / x));

@@ -2,6 +2,13 @@
 moduleMatches = 0x6267BFD0
 .origin = codecave
 
+
+
+
+
+
+
+
 	.align 4
 _94406c74bd2870f3_LCPI0_0:
 	.int	0x3f000000
@@ -614,3 +621,9 @@ newCamRotZ:
 distanceSetting:
 	.int	0x3f800000
 
+
+; --- Address Patches ---
+0x023F90E0 = nop
+0x101E55F8 = .float 3.0
+0x10416BF0 = .int 0x00000000
+0x02E1905C = li r3, 0
