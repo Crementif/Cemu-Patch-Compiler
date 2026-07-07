@@ -13,18 +13,6 @@ PATCH_INT(0x10416BF0, 0x00000000);
 PATCH_WRITE(0x02E1905C, "li r3, 0");
 
 
-float sqrtf(float n) {
-    float x = n;
-    x = 0.5 * (x + (n / x));
-    x = 0.5 * (x + (n / x));
-    x = 0.5 * (x + (n / x));
-    x = 0.5 * (x + (n / x));
-    x = 0.5 * (x + (n / x));
-    x = 0.5 * (x + (n / x));
-    x = 0.5 * (x + (n / x));
-    return x;
-}
-
 // input variables
 float oldTargetPosX = 0.494994f;
 float oldTargetPosY = 0.2000202f;

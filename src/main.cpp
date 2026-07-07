@@ -130,10 +130,12 @@ static std::unique_ptr<TextFile> compileCppWithEmbeddedClang(const std::string& 
       "clang",
       "-target", "powerpc-eabi",
       "-mcpu=750",
+      "-mllvm", "-mattr=+fsqrt",
       "-m32",
       "-mbig-endian",
       "-mno-crbits",
       "-ffreestanding",
+      "-fno-math-errno",
       "-fno-autolink",
       "-fno-data-sections",
       "-fno-function-sections",
@@ -177,7 +179,23 @@ static std::unique_ptr<TextFile> compileCppWithEmbeddedClang(const std::string& 
       "#define PATCH_JUMP_BLA(addr, func) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = bla \" #func)\n"
       "#define PATCH_WRITE(addr, instr) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = \" instr)\n"
       "#define PATCH_INT(addr, value) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = .int \" _CEMU_PATCH_TOSTRING(value))\n"
-      "#define PATCH_FLOAT(addr, value) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = .float \" _CEMU_PATCH_TOSTRING(value))\n";
+      "#define PATCH_FLOAT(addr, value) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = .float \" _CEMU_PATCH_TOSTRING(value))\n"
+      "#ifdef __cplusplus\n"
+      "extern \"C\" {\n"
+      "#endif\n"
+      "__attribute__((always_inline)) inline float sqrtf(float n) {\n"
+      "    float result;\n"
+      "    asm(\"fsqrts %0, %1\" : \"=f\"(result) : \"f\"(n));\n"
+      "    return result;\n"
+      "}\n"
+      "__attribute__((always_inline)) inline double sqrt(double n) {\n"
+      "    double result;\n"
+      "    asm(\"fsqrt %0, %1\" : \"=f\"(result) : \"f\"(n));\n"
+      "    return result;\n"
+      "}\n"
+      "#ifdef __cplusplus\n"
+      "}\n"
+      "#endif\n";
 
   invocation->getPreprocessorOpts().Includes.push_back("C:/__cemu_patch_macros.h");
   auto buf = llvm::MemoryBuffer::getMemBufferCopy(macroDefinitions, "C:/__cemu_patch_macros.h");
@@ -246,6 +264,18 @@ public:
     }
 
     for (auto inputLine : inputFile.lines) {
+      // Skip Clang-generated inline assembly markers to keep output clean
+      {
+        std::string_view trimmed = inputLine;
+        while (!trimmed.empty() && (trimmed.front() == ' ' || trimmed.front() == '\t'))
+          trimmed.remove_prefix(1);
+        while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\t'))
+          trimmed.remove_suffix(1);
+        if (trimmed == "#APP" || trimmed == "#NO_APP") {
+          continue;
+        }
+      }
+
       // check for patch directive markers emitted by PATCH_* macros
       {
         size_t markerPos = inputLine.find("# __CEMU_PATCH:");
