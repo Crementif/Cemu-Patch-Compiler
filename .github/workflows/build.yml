@@ -15,6 +15,26 @@ jobs:
       VCPKG_DEFAULT_TRIPLET: x64-windows-static-release
 
     steps:
+      - name: Free up disk space (Windows Runner)
+        shell: pwsh
+        run: |
+          # Remove unused large directories
+          Write-Host "Cleaning up runner to free disk space..."
+          $directories = @(
+            "C:\android",
+            "C:\ProgramData\Docker",
+            "C:\Modules",
+            "C:\hostedtoolcache\windows\Ruby",
+            "C:\hostedtoolcache\windows\Python",
+            "C:\hostedtoolcache\windows\Java_Temurin-Hotspot_jdk"
+          )
+          foreach ($dir in $directories) {
+            if (Test-Path $dir) {
+              Remove-Item -Path $dir -Recurse -Force -ErrorAction SilentlyContinue
+              Write-Host "Removed $dir"
+            }
+          }
+
       - uses: actions/checkout@v7
 
       - name: Cache vcpkg_installed
