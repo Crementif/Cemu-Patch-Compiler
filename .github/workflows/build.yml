@@ -12,6 +12,7 @@ jobs:
     env:
       VCPKG_INSTALLATION_ROOT: C:\vcpkg
       VCPKG_DOWNLOADS: ${{ github.workspace }}/vcpkg-downloads
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static-release
 
     steps:
       - uses: actions/checkout@v7
@@ -29,7 +30,7 @@ jobs:
         run: >
           cmake -B build -S . 
           -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_INSTALLATION_ROOT }}/scripts/buildsystems/vcpkg.cmake" 
-          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static-release
 
       - name: Build with CMake
         run: cmake --build build --config Release
