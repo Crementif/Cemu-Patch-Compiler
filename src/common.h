@@ -12,6 +12,7 @@
 #include <string_view>
 #include <vector>
 #include <Windows.h>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 

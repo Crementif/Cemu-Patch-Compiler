@@ -54,7 +54,9 @@ std::string assembleInstructionToBytes(std::string_view instruction)
 {
 	std::string instructionStr(instruction);
 
-	// Strip register prefixes (r and cr) to make the instruction compatible with Clang's integrated assembler
+	// Strip register name prefixes (r3 -> 3, cr0 -> 0) when calling Clang's integrated assembler
+	// because it expects numeric register operands in inline assembly context (unlike the frontend
+	// which uses -ppc-asm-full-reg-names and accepts rN names)
 	instructionStr = std::regex_replace(instructionStr, std::regex(R"(\br([0-9]+)\b)"), "$1");
 	instructionStr = std::regex_replace(instructionStr, std::regex(R"(\bcr([0-7])\b)"), "$1");
 

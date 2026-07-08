@@ -173,7 +173,7 @@ std::string AsmUpdater_fixInstruction(std::string_view instructionText)
 
 		if (di.name == "RLWINM" && di.operandStr.size() == 4)
 		{
-			// gcc will emit rlwinm with a bitmask as the 4th operand
+			// Both GCC and Clang can emit rlwinm with a bitmask as the 4th operand
 			// convert mask to MB/ME form that the Cemu assembler expects
 			StringTokenParser maskParser(di.operandStr[3]);
 			uint32_t maskVal;
@@ -231,9 +231,22 @@ std::string AsmUpdater_fixClangLocalLabels(uint64_t unitHash, std::string instru
 {
 	// labels starting with a dot are private/local/weak labels that aren't meant to be globally visible
 	// to avoid name conflict between multiple translation units we add a file-specific prefix to each label
-	std::string replacement = std::format("_{:016x}_L$1", unitHash);
+	std::regex labelMatchRegex(R"(\.L([a-zA-Z0-9_\.]+))", std::regex::ECMAScript);
 
-	// matches `.L` followed by letters/digits/underscores
-	std::regex labelMatchRegex(R"(\.L([a-zA-Z0-9_]+))", std::regex::ECMAScript);
-	return std::regex_replace(instructionText, labelMatchRegex, replacement);
+	std::string result;
+	std::smatch match;
+	std::string::const_iterator searchStart(instructionText.cbegin());
+
+	while (std::regex_search(searchStart, instructionText.cend(), match, labelMatchRegex))
+	{
+		result.append(searchStart, match[0].first);
+
+		std::string labelName = match[1].str();
+		std::replace(labelName.begin(), labelName.end(), '.', '_');
+
+		result.append(std::format("_{:016x}_L{}", unitHash, labelName));
+		searchStart = match[0].second;
+	}
+	result.append(searchStart, instructionText.cend());
+	return result;
 }
