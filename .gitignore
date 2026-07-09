@@ -52,3 +52,11 @@ vcpkg_installed/
 cmake-build-*/
 
 .idea/
+
+# Local Cemu/homebrew testing sandbox
+/testing/*
+!/testing/.gitignore
+!/testing/run_homebrew_test.ps1
+
+# Local BetterVR scratch example
+/examples/BreathOfTheWild_BetterVR/

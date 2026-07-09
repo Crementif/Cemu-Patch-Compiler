@@ -13,6 +13,10 @@
 #include <vector>
 #include <Windows.h>
 #include <algorithm>
+#include <array>
+#include <optional>
+#include <cctype>
+#include <charconv>
 
 namespace fs = std::filesystem;
 
@@ -89,7 +93,7 @@ inline void writeDefaultIniFile(const fs::path& path) {
 	} else {
 		file << "SourceDir = examples/camera\r\n\r\n";
 	}
-	file << "; Output file path for compiled assembly patch\r\n";
+	file << "; Output file path for the compiled assembly patch\r\n";
 	if (isBinDir) {
 		file << "OutFile = ../examples/camera/patch_compiled.asm\r\n\r\n";
 	} else {

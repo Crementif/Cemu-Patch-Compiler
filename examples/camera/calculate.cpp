@@ -1,3 +1,5 @@
+// moduleMatches = 0x6267BFD0
+
 #include "core.h"
 
 // Example: NOP out an instruction at a game address

@@ -9,48 +9,47 @@ on:
 jobs:
   build:
     runs-on: windows-2025-vs2026
-    env:
-      VCPKG_INSTALLATION_ROOT: C:\vcpkg
-      VCPKG_DOWNLOADS: ${{ github.workspace }}/vcpkg-downloads
-      VCPKG_DEFAULT_TRIPLET: x64-windows-static-release
 
     steps:
-      - name: Free up disk space (Windows Runner)
-        shell: pwsh
-        run: |
-          # Remove unused large directories
-          Write-Host "Cleaning up runner to free disk space..."
-          $directories = @(
-            "C:\android",
-            "C:\ProgramData\Docker",
-            "C:\Modules",
-            "C:\hostedtoolcache\windows\Ruby",
-            "C:\hostedtoolcache\windows\Python",
-            "C:\hostedtoolcache\windows\Java_Temurin-Hotspot_jdk"
-          )
-          foreach ($dir in $directories) {
-            if (Test-Path $dir) {
-              Remove-Item -Path $dir -Recurse -Force -ErrorAction SilentlyContinue
-              Write-Host "Removed $dir"
-            }
-          }
-
       - uses: actions/checkout@v7
 
-      - name: Cache vcpkg_installed
-        uses: actions/cache@v4
-        id: cache-vpkg
-        with:
-          path: |
-            vcpkg_installed
-            vcpkg-downloads
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+      - name: Download Precompiled LLVM
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download dependencies-v1 --repo ${{ github.repository }} --pattern "llvm-release-libs.tar.xz"
+
+      - name: Extract LLVM
+        run: |
+          mkdir llvm-precompiled
+          tar -xf llvm-release-libs.tar.xz -C llvm-precompiled
+
+      - name: Patch LLVM CMake Exports
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path llvm-precompiled -Filter *.cmake -Recurse | ForEach-Object {
+            (Get-Content $_.FullName) -replace 'FATAL_ERROR', 'STATUS' | Set-Content $_.FullName
+          }
+
+      - name: Create Visual Studio Directory Junction
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          Write-Host "Detected Visual Studio at: $vsPath"
+          $targetPath = "C:\Program Files\Microsoft Visual Studio\18\Community"
+          if (-not (Test-Path $targetPath)) {
+            $parentDir = Split-Path -Path $targetPath -Parent
+            if (-not (Test-Path $parentDir)) {
+              New-Item -ItemType Directory -Path $parentDir -Force
+            }
+            New-Item -ItemType Junction -Path $targetPath -Value $vsPath -Force
+            Write-Host "Created junction from $targetPath to $vsPath"
+          }
 
       - name: Configure CMake
         run: >
           cmake -B build -S . 
-          -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_INSTALLATION_ROOT }}/scripts/buildsystems/vcpkg.cmake" 
-          -DVCPKG_TARGET_TRIPLET=x64-windows-static-release
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/llvm-precompiled"
 
       - name: Build with CMake
         run: cmake --build build --config Release
@@ -60,5 +59,3 @@ jobs:
         with:
           name: CemuPatchCompiler-Release
           path: build/Release/CemuPatchCompiler-release.exe
-
-

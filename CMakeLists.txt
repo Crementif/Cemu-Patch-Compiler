@@ -77,3 +77,11 @@ set_target_properties(CemuPatchCompiler PROPERTIES
 
 # Also disable MSVC security warnings if needed
 target_compile_definitions(CemuPatchCompiler PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
+
+# Add automatic testing integration
+enable_testing()
+add_test(
+    NAME run_homebrew
+    COMMAND powershell.exe -ExecutionPolicy Bypass -File "${CMAKE_SOURCE_DIR}/testing/run_homebrew_test.ps1"
+)
+
