@@ -14,8 +14,15 @@ find_package(LLVM CONFIG REQUIRED)
 # Source files
 set(SOURCES
     src/main.cpp
+    src/AssemblyParser.cpp
+    src/AssemblyConverter.cpp
+    src/CompilerDriver.cpp
     src/AsmUpdater.cpp
     src/InstructionAssembler.cpp
+    src/AssemblyParser.h
+    src/AssemblyConverter.h
+    src/CompilerDriver.h
+    src/AsmUpdater.h
     src/common.h
     src/InstructionAssembler.h
     src/StringParser.h
@@ -75,6 +82,9 @@ set_target_properties(CemuPatchCompiler PROPERTIES
     OUTPUT_NAME_RELEASE "CemuPatchCompiler-release"
 )
 
+# Use common.h as precompiled header
+target_precompile_headers(CemuPatchCompiler PRIVATE src/common.h)
+
 # Also disable MSVC security warnings if needed
 target_compile_definitions(CemuPatchCompiler PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 
@@ -84,4 +94,3 @@ add_test(
     NAME run_homebrew
     COMMAND powershell.exe -ExecutionPolicy Bypass -File "${CMAKE_SOURCE_DIR}/testing/run_homebrew_test.ps1"
 )
-

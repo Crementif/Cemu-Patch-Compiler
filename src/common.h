@@ -1,25 +1,26 @@
 #pragma once
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <charconv>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <intrin.h>
 #include <map>
 #include <memory>
+#include <optional>
 #include <regex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
 #include <Windows.h>
-#include <algorithm>
-#include <array>
-#include <optional>
-#include <cctype>
-#include <charconv>
 
 namespace fs = std::filesystem;
-
 
 inline fs::path getExecutableDir() {
     char buffer[MAX_PATH];
@@ -28,17 +29,26 @@ inline fs::path getExecutableDir() {
 }
 
 struct Config {
-	std::map<std::string, std::map<std::string, std::string>> sections;
+	std::map<std::string, std::vector<std::pair<std::string, std::string>>> sectionEntries;
 
 	std::string get(const std::string& section, const std::string& key, const std::string& defaultValue = "") const {
-		auto sIt = sections.find(section);
-		if (sIt != sections.end()) {
-			auto kIt = sIt->second.find(key);
-			if (kIt != sIt->second.end()) {
-				return kIt->second;
+		auto sIt = sectionEntries.find(section);
+		if (sIt != sectionEntries.end()) {
+			for (const auto& [k, v] : sIt->second) {
+				if (k == key) {
+					return v;
+				}
 			}
 		}
 		return defaultValue;
+	}
+
+	std::vector<std::pair<std::string, std::string>> getEntries(const std::string& section) const {
+		auto sIt = sectionEntries.find(section);
+		if (sIt != sectionEntries.end()) {
+			return sIt->second;
+		}
+		return {};
 	}
 };
 
@@ -73,7 +83,7 @@ inline Config parseIniFile(const fs::path& path) {
 				while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) value.erase(value.begin());
 				while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) value.pop_back();
 
-				config.sections[currentSection][key] = value;
+				config.sectionEntries[currentSection].push_back({key, value});
 			}
 		}
 	}
@@ -87,18 +97,16 @@ inline void writeDefaultIniFile(const fs::path& path) {
 	bool isBinDir = (path.parent_path().filename() == "bin");
 
 	file << "[Paths]\r\n";
-	file << "; Directory containing C/C++ source files to compile (relative to config or absolute)\r\n";
+	file << "; Format: sourceFolder = OutputFolder (or OutputFile)\r\n";
 	if (isBinDir) {
-		file << "SourceDir = ../examples/camera\r\n\r\n";
+		file << "../examples/camera = ../examples/camera/patch_compiled.asm\r\n\r\n";
 	} else {
-		file << "SourceDir = examples/camera\r\n\r\n";
+		file << "examples/camera = examples/camera/patch_compiled.asm\r\n\r\n";
 	}
-	file << "; Output file path for the compiled assembly patch\r\n";
-	if (isBinDir) {
-		file << "OutFile = ../examples/camera/patch_compiled.asm\r\n\r\n";
-	} else {
-		file << "OutFile = examples/camera/patch_compiled.asm\r\n\r\n";
-	}
+
+	file << "[Settings]\r\n";
+	file << "; Stop-gap solution: Comma-separated list of instructions to convert to .int when Cemu's assembler lacks support\r\n";
+	file << "; hardcodeInstructions = SUBF, MULLW\r\n";
 }
 
 inline fs::path resolvePath(const fs::path& basePath, const std::string& pathStr) {

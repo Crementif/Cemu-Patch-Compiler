@@ -1,5 +1,4 @@
 #include "InstructionAssembler.h"
-#include "common.h"
 
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/CompilerInvocation.h"
@@ -13,20 +12,61 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "clang/Frontend/Utils.h"
 
-const char* forbiddenInstructions[] = {
+static std::set<std::string> g_hardcodedInstructions = {
 	"MFCR",
 	"MTCRF",
-	"MCRF"
+	"MCRF",
+	"BCLR",
+	"BCCTR",
+	"FSQRTS",
+	"FSQRT"
 };
+
+void addHardcodedInstruction(std::string_view name)
+{
+	std::string upper;
+	for (char c : name)
+	{
+		if (!std::isspace(static_cast<unsigned char>(c)))
+		{
+			upper.push_back((char)toupper(static_cast<unsigned char>(c)));
+		}
+	}
+	if (!upper.empty())
+	{
+		g_hardcodedInstructions.insert(upper);
+	}
+}
+
+void addHardcodedInstructions(std::string_view instructionList)
+{
+	size_t start = 0;
+	while (start < instructionList.size())
+	{
+		size_t pos = instructionList.find_first_of(",;\t\r\n ", start);
+		std::string_view token = (pos == std::string_view::npos)
+			                         ? instructionList.substr(start)
+			                         : instructionList.substr(start, pos - start);
+		if (!token.empty())
+		{
+			addHardcodedInstruction(token);
+		}
+		if (pos == std::string_view::npos)
+			break;
+		start = pos + 1;
+	}
+}
 
 bool isForbiddenInstruction(const char* name)
 {
-	for (const auto& forbidden : forbiddenInstructions)
+	if (!name || !*name)
+		return false;
+	std::string upper;
+	for (const char* p = name; *p; ++p)
 	{
-		if (strcmp(name, forbidden) == 0)
-			return true;
+		upper.push_back((char)toupper(static_cast<unsigned char>(*p)));
 	}
-	return false;
+	return g_hardcodedInstructions.contains(upper);
 }
 
 static std::string getSectionBytes(const std::string& objectFilePath) {
@@ -58,6 +98,7 @@ std::string assembleInstructionToBytes(std::string_view instruction)
 	// because it expects numeric register operands in inline assembly context (unlike the frontend
 	// which uses -ppc-asm-full-reg-names and accepts rN names)
 	instructionStr = std::regex_replace(instructionStr, std::regex(R"(\br([0-9]+)\b)"), "$1");
+	instructionStr = std::regex_replace(instructionStr, std::regex(R"(\bf([0-9]+)\b)"), "$1");
 	instructionStr = std::regex_replace(instructionStr, std::regex(R"(\bcr([0-7])\b)"), "$1");
 
 	std::error_code ec;

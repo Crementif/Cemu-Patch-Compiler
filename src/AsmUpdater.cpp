@@ -1,4 +1,4 @@
-#include "common.h"
+#include "AsmUpdater.h"
 #include "InstructionAssembler.h"
 #include "StringParser.h"
 
@@ -207,7 +207,12 @@ std::string AsmUpdater_fixInstruction(std::string_view instructionText)
 			{
 				di.name.pop_back();
 
-				std::string newInstruction = std::format("\t{}", di.name);
+				std::string lowerName = di.name;
+				for (char& c : lowerName)
+				{
+					c = (char)tolower((unsigned char)c);
+				}
+				std::string newInstruction = std::format("\t{}", lowerName);
 				for (size_t i = 0; i < di.operandStr.size(); i++)
 				{
 					if (i == 0)

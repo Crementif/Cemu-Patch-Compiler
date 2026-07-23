@@ -1,0 +1,7 @@
+[Definition]
+titleIds = 00050000101C9300,00050000101C9400,00050000101C9500
+name = Stereo Instancing
+path = "The Legend of Zelda: Breath of the Wild/Stereo Instancing"
+description = Hardware stereo instancing experiment for BotW VR.||Uses GX2 attribute divisor and VGT_MULTI_PRIM_IB_INDEXED_EN to render both eyes in one draw call.
+version = 7
+default = 1

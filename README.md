@@ -1,64 +1,83 @@
-# Cemu (C++) Patch Compiler
+# Cemu Patch Compiler
 
-`Cemu Patch Compiler` is a bridge compiler utility that compiles C/C++ source files into PowerPC (PPC) assembly patches compatible with Cemu's patching framework. It processes the compiled assembly to adapt register syntax, labels, and import relocations into a format Cemu can inject.
-
----
-
-## 1. PowerPC Compiler Support
-
-`Cemu Patch Compiler` has a built-in, statically-linked LLVM and Clang compiler targeting 32-bit PowerPC (PPC32). 
-
-There is **no setup required**! You do not need to download or install external GCC or Clang toolchains. The compiler is fully self-contained.
+`Cemu Patch Compiler` is a tool that compiles C/C++ source files into PowerPC assembly patches that you can use inside Cemu's graphic packs to make complex modifications to the game's code.
 
 ---
 
-## 2. Usage Modes
+## Usage Modes
 
-`Cemu Patch Compiler` supports four execution modes for compiling files:
+- **Place Compiler In The Same Folder As Your Code**: Place `CemuPatchCompiler.exe` next to the C/C++ code that you want to compile, and just double click it to create a patch in that folder.
+- **Drag & Drop**: Drag a source folder or `.cpp`/`.c` file directly onto `CemuPatchCompiler.exe`.
+- **Command Line Arguments**: Run from terminal to pass custom input/output paths or flags. See [Command Line Options](#command-line-options).
+- **Config File (`config.ini`)**: When run without arguments and no local sources are found, it looks for a nearby `config.ini`. See [Configuration File](#configuration-file-configini).
 
-### Drag & Drop
-You can drag a source folder or a single C/C++ file and drop it directly onto the `CemuPatchCompiler.exe` executable:
-- **Folder**: Compiles all `.cpp`, `.c`, `.cc`, and `.cxx` files in the folder into `patch_compiled.asm`. Each source file becomes its own ModuleGroup inside that file. Internal per-file symbols are namespaced automatically, weak/ODR definitions such as `inline` functions or `inline` variables are coalesced across files, and duplicate strong exports are reported as errors.
-- **File**: Compiles that file into `patch_compiled.asm` in the parent directory by default.
+---
 
-### Portable Folder Compilation
-If you place `CemuPatchCompiler.exe` next to some C/C++ files (such as `.cpp`, `.c`, `.h`, `.hpp` files) and run it:
-- The tool first looks for compilable files under `src/` and `source/`.
-- If neither exists, it falls back to compilable files in the current folder.
-- It compiles them into a local `patch_compiled.asm`, with one ModuleGroup per source file.
+## Command Line Options
 
-### Command Line Interface (CLI)
-You can run the utility from a command prompt or script:
+Running with CLI arguments explicitly overrides any other settings.
+
 ```powershell
-# Compile all source files in a specific directory
-CemuPatchCompiler.exe "C:\Path\To\Source"
+# Display help and usage
+CemuPatchCompiler.exe -h
 
-# Compile all source files into a specific output file
-CemuPatchCompiler.exe "C:\Path\To\Source" "C:\Path\To\Output\final_patch.asm"
+# Compile a source directory to custom output file
+CemuPatchCompiler.exe "C:\Path\To\Source" -o "C:\Path\To\Output\final_patch.asm"
 
-# Compile a single source file into a specific output file
-CemuPatchCompiler.exe "C:\Path\To\Source\main.cpp" "C:\Path\To\Output\main.asm"
+# Compile with target module checksum override
+CemuPatchCompiler.exe "C:\Path\To\Source" -c 0x6267BFD0
+
+# Extend hardcoded instructions as .int (stop-gap workaround for Cemu's assembler)
+CemuPatchCompiler.exe "C:\Path\To\Source" -i "SUBF, MULLW"
 ```
 
-Each compilable source file can optionally begin with a metadata comment that overrides the Cemu module checksum:
+| Flag | Description |
+|---|---|
+| `-h`, `--help` | Show usage instructions and exit. |
+| `-v`, `--version` | Show compiler version. |
+| `-o`, `--output <file\|dir>` | Specify target output patch file or directory. |
+| `-c`, `--checksum <hex>` | Override target module checksum (e.g. `0x6267BFD0`). |
+| `-i`, `--hardcode-instructions <list>` | Extend instructions to hardcode as `.int` (e.g. `SUBF, MULLW`). |
 
-```cpp
-// moduleMatches = 0x6267BFD0
-```
+---
 
-If that first-line directive is absent, the compiler uses the built-in BotW checksum `0x6267BFD0`.
+## Configuration File (`config.ini`)
 
-For local emulator smoke tests, the repository also includes `testing/run_homebrew_test.ps1`. That script launches the homebrew title in `testing/`, rewrites the sample source checksum directive in `examples/testing/` to match the module checksum found in Cemu's log, compiles the sample patch, and then relaunches Cemu to verify the patch loads cleanly.
-
-### Config File (`config.ini`)
-If run without command-line arguments and no compilable sources are found automatically, the tool falls back to the paths defined in `config.ini`. If `config.ini` is missing, it first tries the built-in default paths and only writes a default `config.ini` if that fallback still does not produce a patch.
-
-Example `config.ini`:
 ```ini
 [Paths]
-; Directory containing C/C++ source files to compile (relative to config or absolute)
-SourceDir = examples/camera
+; Format: sourceFolder = outputFolder (or outputFile)
+examples/camera = examples/camera/patch_compiled.asm
+examples/graphics = examples/graphics/patch_compiled.asm
 
-; Output file path for the compiled assembly patch
-OutFile = examples/camera/patch_compiled.asm
+[Settings]
+; Stop-gap workaround for instructions unsupported by Cemu's assembler
+hardcodeInstructions = SUBF, MULLW
+```
+
+---
+
+## Missing Instructions Workaround
+
+Sometimes you'll encounter that certain code will cause Clang (the compiler used internally) to use rare PowerPC instructions that Cemu's assembler isn't familiar with.
+Consider adding support for this instruction and sending a PR to [Cemu](https://github.com/cemu-project/Cemu).
+
+As it'll likely take a bit for this instruction support to reach Cemu users, there's also a useful built-in system to hardcode these instructions as raw hex values instead as `.int 0x[encoded opcode]` which bypasses Cemu's assembler.
+
+You can find the list of hardcoded instructions in [InstructionAssembler.cpp](/src/InstructionAssembler.cpp), but you can use `config.ini` or command line arguments to add new instructions to this list. See the CLI and config file sections for more info.
+
+---
+
+## Multi-File Symbol Linking
+
+- **Internal Symbols**: Namespaced per file to prevent label collisions.
+- **Inline & Weak Definitions**: Coalesced across files (ODR deduplication).
+- **Strong Symbols**: Linked globally; duplicate strong definitions trigger linker errors.
+
+---
+
+## Building & Testing
+
+```cmd
+build.bat            # Build executable (Release)
+run_smoketests.bat   # Run integration tests
 ```

@@ -10,6 +10,8 @@ param (
 
 $ErrorActionPreference = "Stop"
 
+$RunAllExamples = [string]::IsNullOrWhiteSpace($SourceDir)
+
 if ([string]::IsNullOrWhiteSpace($CemuDir)) {
     $CemuDir = $PSScriptRoot
 }
@@ -85,11 +87,15 @@ function Get-CompilerExe {
     $Candidates = @(
         (Join-Path $BaseDir "cmake-build-local-release\Release\CemuPatchCompiler-release.exe"),
         (Join-Path $BaseDir "cmake-build-release\Release\CemuPatchCompiler-release.exe"),
+        (Join-Path $BaseDir "cmake-build-release\CemuPatchCompiler-release.exe"),
         (Join-Path $BaseDir "cmake-build-debug\Debug\CemuPatchCompiler-debug.exe"),
+        (Join-Path $BaseDir "cmake-build-debug\CemuPatchCompiler-debug.exe"),
         (Join-Path $BaseDir "bin\CemuPatchCompiler-release.exe"),
         (Join-Path $BaseDir "bin\CemuPatchCompiler-debug.exe"),
         (Join-Path $BaseDir "build\bin\CemuPatchCompiler-release.exe"),
-        (Join-Path $BaseDir "build\bin\CemuPatchCompiler-debug.exe")
+        (Join-Path $BaseDir "build\bin\CemuPatchCompiler-debug.exe"),
+        (Join-Path $BaseDir "build\CemuPatchCompiler-release.exe"),
+        (Join-Path $BaseDir "build\CemuPatchCompiler-debug.exe")
     )
 
     foreach ($Candidate in $Candidates) {
@@ -267,20 +273,14 @@ if (-not (Test-Path $CemuExe)) {
 
 $GraphicPackDir = Join-Path $CemuDir "graphicPacks\$GraphicPackName"
 $RulesFile = Join-Path $GraphicPackDir "rules.txt"
-$SmokeSourceFile = Join-Path $SourceDir "smoke_test.cpp"
-if (-not (Test-Path $SmokeSourceFile)) {
-    $FallbackSourceFile = Get-ChildItem -Path $SourceDir -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Extension -in @(".cpp", ".c", ".cc", ".cxx") } |
-        Sort-Object Name |
-        Select-Object -First 1
-    if ($null -eq $FallbackSourceFile) {
-        Write-Failure "Could not find a compilable smoke-test source file in $SourceDir."
-        exit 1
-    }
 
-    $SmokeSourceFile = $FallbackSourceFile.FullName
+$ExamplesToRun = @()
+if ($RunAllExamples) {
+    # Run all examples under the examples/ folder
+    $ExamplesToRun = Get-ChildItem -Path (Join-Path $WorkspaceRoot "examples") -Directory | ForEach-Object { $_.FullName }
+} else {
+    $ExamplesToRun = @((Resolve-Path $SourceDir).Path)
 }
-$PatchFile = Join-Path $GraphicPackDir (([System.IO.Path]::GetFileNameWithoutExtension($SmokeSourceFile)) + ".asm")
 
 Write-Header "Discovering Module Checksum"
 Write-Info "Cemu directory: $CemuDir"
@@ -311,76 +311,99 @@ default = 1
 Set-Content -Path $RulesFile -Value $RulesContent -Encoding ascii
 Write-Info "Rules file: $RulesFile"
 
-$OriginalSmokeSourceContents = $null
-try {
-    if (-not $SkipCompile) {
-        $CompilerExe = Get-CompilerExe -BaseDir $WorkspaceRoot
-        if ($null -eq $CompilerExe) {
-            Write-Failure "Could not locate CemuPatchCompiler executable in the workspace bin or build folders."
-            exit 1
-        }
+$FailedExamples = @()
 
-        $OriginalSmokeSourceContents = Set-SourceModuleMatches -SourcePath $SmokeSourceFile -Checksum $Metadata.ModuleChecksum
+foreach ($ExampleDir in $ExamplesToRun) {
+    $ExampleName = Split-Path $ExampleDir -Leaf
+    Write-Header "Testing Example: $ExampleName"
 
-        Write-Header "Compiling Smoke Patch"
-        Write-Info "Compiler: $CompilerExe"
-        Write-Info "Source file: $SmokeSourceFile"
-        Write-Info "Output file: $PatchFile"
-
-        $CompilerArgs = @($SmokeSourceFile, $PatchFile)
-
-        $CompileProcess = Start-Process -FilePath $CompilerExe -ArgumentList $CompilerArgs -WorkingDirectory $WorkspaceRoot -NoNewWindow -PassThru -Wait
-        if ($CompileProcess.ExitCode -ne 0) {
-            Write-Failure "Patch compilation failed with exit code $($CompileProcess.ExitCode)."
-            exit 1
-        }
-
-        Write-Success "Smoke patch compiled successfully."
-    } elseif (-not (Test-Path $PatchFile)) {
-        Write-Failure "SkipCompile was set but no compiled patch exists at $PatchFile."
-        exit 1
+    # Clean the graphic pack directory of old asm files to prevent symbol duplication errors
+    if (Test-Path $GraphicPackDir) {
+        Remove-Item (Join-Path $GraphicPackDir "patch_*.asm") -Force -ErrorAction SilentlyContinue
     }
+    # Copy any other patch files from the example directory
+    Get-ChildItem -Path $ExampleDir -Filter "patch_*.asm" -File | Where-Object { $_.Name -ne "patch_compiled.asm" } | ForEach-Object {
+        Copy-Item $_.FullName -Destination (Join-Path $GraphicPackDir $_.Name) -Force
+    }
+    # Create patch compiled asm path
+    $PatchFile = Join-Path $GraphicPackDir "patch_compiled.asm"
 
-    Write-Header "Launching Homebrew With Patch"
-    $LogLines = Invoke-CemuSmokeRun -BaseDir $CemuDir -Executable $CemuExe -LaunchGamePath $GamePath -Seconds $DurationSeconds
+    try {
+        if (-not $SkipCompile) {
+            $CompilerExe = Get-CompilerExe -BaseDir $WorkspaceRoot
+            if ($null -eq $CompilerExe) {
+                Write-Failure "Could not locate CemuPatchCompiler executable in the workspace bin or build folders."
+                exit 1
+            }
 
-    $Errors = @()
-    $AppliedAutoGenerated = $false
-    foreach ($Line in $LogLines) {
-        if ($Line -match "Applying patch group 'AutoGenerated'") {
-            $AppliedAutoGenerated = $true
+            Write-Info "Compiler: $CompilerExe"
+            Write-Info "Source path: $ExampleDir"
+            Write-Info "Output file: $PatchFile"
+
+            $CompilerArgs = @($ExampleDir, $PatchFile)
+
+            $CompileProcess = Start-Process -FilePath $CompilerExe -ArgumentList $CompilerArgs -WorkingDirectory $WorkspaceRoot -NoNewWindow -PassThru -Wait
+            if ($CompileProcess.ExitCode -ne 0) {
+                throw "Patch compilation failed with exit code $($CompileProcess.ExitCode)."
+            }
+
+            if (Test-Path $PatchFile) {
+                # Update moduleMatches checksum directly in patch_compiled.asm to avoid mutating C++ files
+                $AsmContent = [System.IO.File]::ReadAllText($PatchFile)
+                $AsmContent = $AsmContent -replace '(?m)^moduleMatches\s*=\s*0x[0-9A-Fa-f]+', "moduleMatches = 0x$($Metadata.ModuleChecksum)"
+                [System.IO.File]::WriteAllText($PatchFile, $AsmContent, [System.Text.Encoding]::ASCII)
+            } else {
+                throw "Compilation finished but output file not found at $PatchFile"
+            }
+
+            Write-Success "Patch compiled successfully."
+        } elseif (-not (Test-Path $PatchFile)) {
+            throw "SkipCompile was set but no compiled patch exists at $PatchFile."
         }
 
-        if ($Line -match "An error occurred while trying to apply the patches" -or
-            $Line -match "Syntax error" -or
-            $Line -match "Error in assembler" -or
-            $Line -match "Error while processing" -or
-            $Line -match "No patches for this graphic pack will be applied") {
-            $Errors += $Line
+        Write-Info "Launching Homebrew with patch..."
+        $LogLines = Invoke-CemuSmokeRun -BaseDir $CemuDir -Executable $CemuExe -LaunchGamePath $GamePath -Seconds $DurationSeconds
+
+        $Errors = @()
+        $AppliedAutoGenerated = $false
+        foreach ($Line in $LogLines) {
+            if ($Line -match "Applying patch group") {
+                $AppliedAutoGenerated = $true
+            }
+
+            if ($Line -match "An error occurred while trying to apply the patches" -or
+                $Line -match "Syntax error" -or
+                $Line -match "Error in assembler" -or
+                $Line -match "Error while processing" -or
+                $Line -match "is already defined" -or
+                $Line -match "No patches for this graphic pack will be applied") {
+                $Errors += $Line
+            }
         }
-    }
 
-    if ($Errors.Count -gt 0) {
-        Write-Failure "Cemu reported patch application errors:"
-        foreach ($ErrorLine in $Errors) {
-            Write-Host "  $ErrorLine" -ForegroundColor Red
+        if ($Errors.Count -gt 0) {
+            Write-Failure "Cemu reported patch application errors:"
+            foreach ($ErrorLine in $Errors) {
+                Write-Host "  $ErrorLine" -ForegroundColor Red
+            }
+            throw "Cemu assembler errors occurred."
         }
-        exit 1
-    }
 
-    if (-not $AppliedAutoGenerated) {
-        Write-Failure "Cemu launched the title, but the generated PatchCompiler graphic pack was not applied."
-        exit 1
-    }
+        if (-not $AppliedAutoGenerated) {
+            throw "Cemu launched the title, but the generated PatchCompiler graphic pack was not applied."
+        }
 
-    Write-Success "Homebrew launched and the generated patch loaded without Cemu assembler errors."
-    exit 0
-} finally {
-    if ($null -ne $OriginalSmokeSourceContents) {
-        [System.IO.File]::WriteAllText(
-            $SmokeSourceFile,
-            $OriginalSmokeSourceContents,
-            [System.Text.Encoding]::ASCII
-        )
+        Write-Success "Example '$ExampleName' verified successfully!"
+    } catch {
+        Write-Failure "Example '$ExampleName' FAILED: $_"
+        $FailedExamples += $ExampleName
     }
 }
+
+if ($FailedExamples.Count -gt 0) {
+    Write-Failure "Some examples failed verification: $($FailedExamples -join ', ')"
+    exit 1
+}
+
+Write-Success "All examples verified successfully!"
+exit 0
