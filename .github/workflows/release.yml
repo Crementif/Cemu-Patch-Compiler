@@ -5,6 +5,12 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for the release (e.g. v1.1.0)'
+        required: true
+        default: 'v1.1.0'
+        type: string
 
 permissions:
   contents: write
@@ -60,7 +66,10 @@ jobs:
       - name: Package Release Zip
         shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "latest" }
+          $version = "${{ inputs.tag_name }}"
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "v1.1.0" }
+          }
           $zipName = "CemuPatchCompiler-$version-windows-x64.zip"
           
           New-Item -ItemType Directory -Path release_staging -Force
@@ -75,5 +84,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag_name || github.ref_name }}
           files: ${{ env.ZIP_NAME }}
           generate_release_notes: true
