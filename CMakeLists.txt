@@ -92,5 +92,5 @@ target_compile_definitions(CemuPatchCompiler PRIVATE _CRT_SECURE_NO_WARNINGS NOM
 enable_testing()
 add_test(
     NAME run_homebrew
-    COMMAND powershell.exe -ExecutionPolicy Bypass -File "${CMAKE_SOURCE_DIR}/testing/run_homebrew_test.ps1"
+    COMMAND powershell.exe -ExecutionPolicy Bypass -File "${CMAKE_SOURCE_DIR}/test_compile_examples.ps1"
 )

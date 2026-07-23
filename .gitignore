@@ -56,7 +56,11 @@ cmake-build-*/
 # Local Cemu/homebrew testing sandbox
 /testing/*
 !/testing/.gitignore
-!/testing/run_homebrew_test.ps1
+!/testing/sand.wua
+!/testing/Cemu.exe
+!/testing/settings.xml
+!/testing/graphicPacks/
+!/testing/graphicPacks/.gitkeep
 
 # Local BetterVR scratch example
 /examples/BreathOfTheWild_BetterVR/

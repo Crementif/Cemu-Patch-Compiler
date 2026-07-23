@@ -78,6 +78,6 @@ You can find the list of hardcoded instructions in [InstructionAssembler.cpp](/s
 ## Building & Testing
 
 ```cmd
-build.bat            # Build executable (Release)
-run_smoketests.bat   # Run integration tests
+build.bat                  # Build executable (Release)
+powershell .\test_compile_examples.ps1   # Run integration tests
 ```
