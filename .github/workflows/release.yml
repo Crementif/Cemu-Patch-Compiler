@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2025-vs2026
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download Precompiled LLVM
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download dependencies-v1 --repo ${{ github.repository }} --pattern "llvm-release-libs.tar.xz"
+
+      - name: Extract LLVM
+        run: |
+          mkdir llvm-precompiled
+          tar -xf llvm-release-libs.tar.xz -C llvm-precompiled
+
+      - name: Patch LLVM CMake Exports
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path llvm-precompiled -Filter *.cmake -Recurse | ForEach-Object {
+            (Get-Content $_.FullName) -replace 'FATAL_ERROR', 'STATUS' | Set-Content $_.FullName
+          }
+
+      - name: Create Visual Studio Directory Junction
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          Write-Host "Detected Visual Studio at: $vsPath"
+          $targetPath = "C:\Program Files\Microsoft Visual Studio\18\Community"
+          if (-not (Test-Path $targetPath)) {
+            $parentDir = Split-Path -Path $targetPath -Parent
+            if (-not (Test-Path $parentDir)) {
+              New-Item -ItemType Directory -Path $parentDir -Force
+            }
+            New-Item -ItemType Junction -Path $targetPath -Value $vsPath -Force
+            Write-Host "Created junction from $targetPath to $vsPath"
+          }
+
+      - name: Configure CMake
+        run: >
+          cmake -B build -S . 
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/llvm-precompiled"
+
+      - name: Build with CMake
+        run: cmake --build build --config Release
+
+      - name: Package Release Zip
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "latest" }
+          $zipName = "CemuPatchCompiler-$version-windows-x64.zip"
+          
+          New-Item -ItemType Directory -Path release_staging -Force
+          Copy-Item build\Release\CemuPatchCompiler-release.exe release_staging\CemuPatchCompiler.exe
+          Copy-Item README.md release_staging\
+          Copy-Item LICENSE.md release_staging\
+          
+          Compress-Archive -Path release_staging\* -DestinationPath $zipName -Force
+          Write-Host "Created package: $zipName"
+          echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_NAME }}
+          generate_release_notes: true
