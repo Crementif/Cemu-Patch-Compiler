@@ -1,0 +1,7 @@
+[Definition]
+titleIds = 00050000101C9300,00050000101C9400,00050000101C9500
+name = Camera
+path = "The Legend of Zelda: Breath of the Wild/Camera"
+description = Camera calculation patch.
+version = 7
+default = 1
