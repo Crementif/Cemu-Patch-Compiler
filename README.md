@@ -73,7 +73,7 @@ Originally this was intended to only translate individual functions but over tim
 - There is no runtime / standard library. You have to bootstrap everything yourself, including `new` and `delete`
 - Static constructors are not run and global variables are not automatically initialized. You can work around this by declaring them `constinit` or having a manually invoked init function that handles it.
 - The VTable format is different. This is not an issue as long as your code is self-contained. But if you replace classes in a game then you have to model the game's VTables as structs with pointers and offset fields
-- No real linking support. Rather this just appends on translation unit after another. This is not a huge issue but means there are side effects, like using a static function from a header in multiple .cpp files will not be deduplicated
+- No real linking support. Rather this just appends one translation unit after another. This is not a huge issue but means there are side effects, like using a static function from a header in multiple .cpp files will not be deduplicated
 
 ---
 
