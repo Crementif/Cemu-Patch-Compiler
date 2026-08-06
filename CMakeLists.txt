@@ -95,3 +95,10 @@ add_test(
     NAME run_homebrew
     COMMAND powershell.exe -ExecutionPolicy Bypass -File "${CMAKE_SOURCE_DIR}/test_compile_examples.ps1"
 )
+add_test(
+    NAME compile_math_helpers
+    COMMAND powershell.exe -ExecutionPolicy Bypass
+            -File "${CMAKE_SOURCE_DIR}/test_compile_math_helpers.ps1"
+            -Compiler "$<TARGET_FILE:CemuPatchCompiler>"
+            -Output "${CMAKE_BINARY_DIR}/math_helpers_test.asm"
+)

@@ -1,0 +1,7 @@
+[Definition]
+titleIds = 00050000101C9300,00050000101C9400,00050000101C9500
+name = PatchCompiler Math Test
+path = "Cemu PatchCompiler/Math Test"
+description = Generates and exposes every self-contained PatchCompiler math helper. Call patchMathSelfTest to run the on-target smoke checks; zero means success.
+version = 8
+default = 1
