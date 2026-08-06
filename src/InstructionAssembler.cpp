@@ -18,8 +18,8 @@ static std::set<std::string> g_hardcodedInstructions = {
 	"MCRF",
 	"BCLR",
 	"BCCTR",
-	"FSQRTS",
-	"FSQRT"
+	"FRSQRTE",
+	"FABS"
 };
 
 void addHardcodedInstruction(std::string_view name)

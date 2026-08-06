@@ -1,4 +1,5 @@
 #include "AssemblyConverter.h"
+#include "EmbeddedHeader.h"
 #include "StringParser.h"
 
 #include "clang/Frontend/CompilerInstance.h"
@@ -50,7 +51,6 @@ std::unique_ptr<TextFile> compileCppWithEmbeddedClang(
       "clang",
       "-target", "powerpc-eabi",
       "-mcpu=750",
-      "-mllvm", "-mattr=+fsqrt",
       "-m32",
       "-mbig-endian",
       "-mno-crbits",
@@ -91,31 +91,7 @@ std::unique_ptr<TextFile> compileCppWithEmbeddedClang(
     return nullptr;
   }
   // Inject PATCH_* macros as an implicit virtual header included in all compiles.
-  std::string macroDefinitions = 
-      "#pragma once\n"
-      "#define _CEMU_PATCH_STRINGIFY(x) #x\n"
-      "#define _CEMU_PATCH_TOSTRING(x) _CEMU_PATCH_STRINGIFY(x)\n"
-      "#define PATCH_NOP(addr) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = nop\")\n"
-      "#define PATCH_JUMP_BLA(addr, func) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = bla \" #func)\n"
-      "#define PATCH_WRITE(addr, instr) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = \" instr)\n"
-      "#define PATCH_INT(addr, value) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = .int \" _CEMU_PATCH_TOSTRING(value))\n"
-      "#define PATCH_FLOAT(addr, value) asm(\"\\n# __CEMU_PATCH: \" _CEMU_PATCH_TOSTRING(addr) \" = .float \" _CEMU_PATCH_TOSTRING(value))\n"
-      "#ifdef __cplusplus\n"
-      "extern \"C\" {\n"
-      "#endif\n"
-      "__attribute__((always_inline)) inline float sqrtf(float n) {\n"
-      "    float result;\n"
-      "    asm(\"fsqrts %0, %1\" : \"=f\"(result) : \"f\"(n));\n"
-      "    return result;\n"
-      "}\n"
-      "__attribute__((always_inline)) inline double sqrt(double n) {\n"
-      "    double result;\n"
-      "    asm(\"fsqrt %0, %1\" : \"=f\"(result) : \"f\"(n));\n"
-      "    return result;\n"
-      "}\n"
-      "#ifdef __cplusplus\n"
-      "}\n"
-      "#endif\n";
+  std::string macroDefinitions(kCemuPatchImplicitHeader);
 
   invocation->getPreprocessorOpts().Includes.push_back("C:/__cemu_patch_macros.h");
   auto buf = llvm::MemoryBuffer::getMemBufferCopy(macroDefinitions, "C:/__cemu_patch_macros.h");

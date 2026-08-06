@@ -17,6 +17,7 @@ set(SOURCES
     src/AssemblyParser.cpp
     src/AssemblyConverter.cpp
     src/CompilerDriver.cpp
+    src/EmbeddedHeader.h
     src/AsmUpdater.cpp
     src/InstructionAssembler.cpp
     src/AssemblyParser.h
