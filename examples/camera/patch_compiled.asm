@@ -13,19 +13,25 @@ moduleMatches = 0x6267BFD0
 _94406c74bd2870f3_LCPI0_0:
 	.int	0x00000000
 _94406c74bd2870f3_LCPI0_1:
-	.int	0x3f800000
+	.int	0x7f7fffff
 _94406c74bd2870f3_LCPI0_2:
-	.int	0x3e800000
+	.int	0xbf000000
 _94406c74bd2870f3_LCPI0_3:
-	.int	0xbf800000
+	.int	0x3fc00000
 _94406c74bd2870f3_LCPI0_4:
-	.int	0x40000000
+	.int	0x3f800000
 _94406c74bd2870f3_LCPI0_5:
+	.int	0x3e800000
+_94406c74bd2870f3_LCPI0_6:
+	.int	0xbf800000
+_94406c74bd2870f3_LCPI0_7:
+	.int	0x40000000
+_94406c74bd2870f3_LCPI0_8:
 	.int	0xc0000000
 	.align 4
 _Z20calculateNewRotationv:
 _94406c74bd2870f3_Lfunc_begin0:
-	stwu r1, -48(r1)
+	stwu r1, -64(r1)
 	lis r3, oldTargetPosX@ha
 	lfs f3, oldTargetPosX@l(r3)
 	lis r3, oldCamPosX@ha
@@ -33,100 +39,296 @@ _94406c74bd2870f3_Lfunc_begin0:
 	lis r3, oldTargetPosY@ha
 	lfs f4, oldTargetPosY@l(r3)
 	lis r3, oldCamPosY@ha
-	lfs f2, oldCamPosY@l(r3)
+	lfs f1, oldCamPosY@l(r3)
 	lis r3, oldTargetPosZ@ha
 	lfs f5, oldTargetPosZ@l(r3)
 	lis r3, oldCamPosZ@ha
-	lfs f1, oldCamPosZ@l(r3)
-	fsubs f3, f3, f0
-	fsubs f4, f4, f2
-	fmuls f6, f3, f4
-	fsubs f5, f5, f1
-	fmuls f6, f6, f5
-	fsqrts f6, f6
+	lfs f2, oldCamPosZ@l(r3)
 	lis r3, _94406c74bd2870f3_LCPI0_0@ha
-	fdivs f7, f3, f6
-	stfd f30, 32(r1)
-	stfd f31, 40(r1)
-	stfd f27, 8(r1)
-	stfd f28, 16(r1)
-	stfd f29, 24(r1)
-	fdivs f8, f4, f6
-	fdivs f3, f5, f6
-	lfs f6, _94406c74bd2870f3_LCPI0_0@l(r3)
+	lfs f10, _94406c74bd2870f3_LCPI0_0@l(r3)
+	fsubs f3, f3, f0
+	fsubs f4, f4, f1
+	fsubs f5, f5, f2
+	fmuls f6, f3, f4
+	fmuls f6, f6, f5
+	fcmpu cr7, f6, f10
+	.int 0x7C600026 ; mfcr r3
+	.int 0x7C800026 ; mfcr r4
+	stfd f26, 16(r1)
+	clrlwi	r3, r3, 31
+	rlwinm r4, r4, 31, 31, 31
+	or r3, r4, r3
+	cmplwi	r3, 0
+	stfd f27, 24(r1)
+	stfd f28, 32(r1)
+	stfd f29, 40(r1)
+	stfd f30, 48(r1)
+	stfd f31, 56(r1)
+	bne	cr0, _94406c74bd2870f3_LBB0_5
+	fcmpu cr0, f6, f10
+	bge cr0, _94406c74bd2870f3_LBB0_3
+	fsubs f6, f6, f6
+	fdivs f6, f6, f6
+	b _94406c74bd2870f3_LBB0_5
+_94406c74bd2870f3_LBB0_3:
 	lis r3, _94406c74bd2870f3_LCPI0_1@ha
-	lfs f11, _94406c74bd2870f3_LCPI0_1@l(r3)
+	lfs f7, _94406c74bd2870f3_LCPI0_1@l(r3)
+	fcmpu cr0, f6, f7
+	bgt	cr0, _94406c74bd2870f3_LBB0_5
 	lis r3, _94406c74bd2870f3_LCPI0_2@ha
-	fmuls f4, f8, f6
-	fmuls f9, f7, f8
-	fmuls f5, f3, f9
-	fmuls f4, f3, f4
-	fmuls f12, f3, f6
-	fsqrts f10, f5
-	fdivs f5, f4, f10
-	fmuls f12, f7, f12
-	fmuls f4, f9, f6
-	fmuls f13, f12, f6
-	fmuls f12, f3, f5
-	fdivs f9, f4, f10
-	lfs f4, _94406c74bd2870f3_LCPI0_2@l(r3)
-	fmuls f12, f7, f12
-	fmuls f12, f9, f12
-	fadds f31, f5, f12
-	fsubs f30, f5, f12
-	fadds f31, f3, f31
-	fsubs f30, f30, f3
-	fneg f28, f5
-	fsubs f27, f12, f5
-	fadds f31, f31, f11
-	fadds f30, f30, f11
-	fmuls f29, f31, f4
-	fmuls f31, f30, f4
-	fsubs f30, f27, f3
-	fsubs f12, f28, f12
-	fcmpu cr0, f29, f6
-	fadds f30, f30, f11
-	fadds f28, f3, f12
-	fmr f12, f6
-	blt	cr0, _94406c74bd2870f3_LBB0_2
-	fmr f12, f29
-_94406c74bd2870f3_LBB0_2:
-	fdivs f10, f13, f10
-	fcmpu cr0, f31, f6
-	fadds f13, f28, f11
-	fmuls f30, f30, f4
-	fmr f11, f6
-	blt	cr0, _94406c74bd2870f3_LBB0_4
-	fmr f11, f31
-_94406c74bd2870f3_LBB0_4:
-	fcmpu cr0, f30, f6
-	fmuls f31, f8, f9
-	fmuls f29, f7, f10
-	fmuls f4, f13, f4
-	fmr f13, f6
-	blt	cr0, _94406c74bd2870f3_LBB0_6
-	fmr f13, f30
-_94406c74bd2870f3_LBB0_6:
-	fcmpu cr0, f4, f6
-	fmuls f31, f3, f31
-	fmuls f30, f8, f29
-	blt	cr0, _94406c74bd2870f3_LBB0_8
-	fmr f6, f4
+	lfs f7, _94406c74bd2870f3_LCPI0_2@l(r3)
+	lis r3, _94406c74bd2870f3_LCPI0_3@ha
+	lfs f8, _94406c74bd2870f3_LCPI0_3@l(r3)
+	.int 0xFD203034 ; frsqrte f9, f6
+	fmul f7, f6, f7
+	fmul f11, f7, f9
+	fmadd f11, f11, f9, f8
+	fmul f9, f9, f11
+	fmul f11, f7, f9
+	fmadd f11, f11, f9, f8
+	fmul f9, f9, f11
+	fmul f7, f7, f9
+	fmadd f7, f7, f9, f8
+	fmul f7, f9, f7
+	fmul f6, f7, f6
+	frsp f6, f6
+_94406c74bd2870f3_LBB0_5:
+	fdivs f7, f3, f6
+	fdivs f8, f4, f6
+	fdivs f11, f5, f6
+	fmuls f4, f7, f8
+	fmuls f13, f11, f4
+	fcmpu cr7, f13, f10
+	.int 0x7C600026 ; mfcr r3
+	.int 0x7C800026 ; mfcr r4
+	fmuls f3, f8, f10
+	clrlwi	r3, r3, 31
+	rlwinm r4, r4, 31, 31, 31
+	or r3, r4, r3
+	cmplwi	r3, 0
+	fmuls f3, f11, f3
+	fmuls f4, f4, f10
+	bne	cr0, _94406c74bd2870f3_LBB0_10
+	lis r3, _94406c74bd2870f3_LCPI0_0@ha
+	lfs f5, _94406c74bd2870f3_LCPI0_0@l(r3)
+	fcmpu cr0, f13, f5
+	bge cr0, _94406c74bd2870f3_LBB0_8
+	fsubs f5, f13, f13
+	fdivs f13, f5, f5
+	b _94406c74bd2870f3_LBB0_10
 _94406c74bd2870f3_LBB0_8:
-	fsqrts f3, f12
-	fsqrts f4, f11
+	lis r3, _94406c74bd2870f3_LCPI0_1@ha
+	lfs f5, _94406c74bd2870f3_LCPI0_1@l(r3)
+	fcmpu cr0, f13, f5
+	bgt	cr0, _94406c74bd2870f3_LBB0_10
+	lis r3, _94406c74bd2870f3_LCPI0_2@ha
+	lfs f5, _94406c74bd2870f3_LCPI0_2@l(r3)
+	lis r3, _94406c74bd2870f3_LCPI0_3@ha
+	lfs f6, _94406c74bd2870f3_LCPI0_3@l(r3)
+	.int 0xFD206834 ; frsqrte f9, f13
+	fmul f5, f13, f5
+	fmul f12, f5, f9
+	fmadd f12, f12, f9, f6
+	fmul f9, f9, f12
+	fmul f12, f5, f9
+	fmadd f12, f12, f9, f6
+	fmul f9, f9, f12
+	fmul f5, f5, f9
+	fmadd f5, f5, f9, f6
+	fmul f5, f9, f5
+	fmul f5, f5, f13
+	frsp f13, f5
+_94406c74bd2870f3_LBB0_10:
+	fdivs f12, f3, f13
+	lis r3, _94406c74bd2870f3_LCPI0_4@ha
+	fmuls f3, f11, f12
+	fdivs f9, f4, f13
+	lfs f4, _94406c74bd2870f3_LCPI0_4@l(r3)
+	lis r3, _94406c74bd2870f3_LCPI0_5@ha
+	lfs f5, _94406c74bd2870f3_LCPI0_5@l(r3)
+	lis r3, _94406c74bd2870f3_LCPI0_0@ha
+	lfs f31, _94406c74bd2870f3_LCPI0_0@l(r3)
+	fmuls f3, f7, f3
+	fmuls f3, f9, f3
+	fadds f6, f12, f3
+	fsubs f30, f12, f3
+	fadds f6, f11, f6
+	fsubs f30, f30, f11
+	fneg f28, f12
+	fsubs f27, f3, f12
+	fadds f6, f6, f4
+	fadds f30, f30, f4
+	fmuls f29, f6, f5
+	fmuls f6, f30, f5
+	fsubs f30, f27, f11
+	fsubs f3, f28, f3
+	fcmpu cr0, f29, f31
+	fadds f30, f30, f4
+	fadds f28, f11, f3
+	fmr f3, f31
+	blt	cr0, _94406c74bd2870f3_LBB0_12
+	fmr f3, f29
+_94406c74bd2870f3_LBB0_12:
+	fcmpu cr0, f6, f31
+	fadds f29, f28, f4
+	fmuls f30, f30, f5
+	fmr f4, f31
+	blt	cr0, _94406c74bd2870f3_LBB0_14
+	fmr f4, f6
+_94406c74bd2870f3_LBB0_14:
+	fcmpu cr0, f30, f31
+	fmuls f6, f11, f10
+	fmuls f29, f29, f5
+	fmr f5, f31
+	blt	cr0, _94406c74bd2870f3_LBB0_16
+	fmr f5, f30
+_94406c74bd2870f3_LBB0_16:
+	fcmpu cr0, f29, f31
+	fmuls f30, f7, f6
+	fmr f6, f31
+	blt	cr0, _94406c74bd2870f3_LBB0_18
+	fmr f6, f29
+_94406c74bd2870f3_LBB0_18:
+	fcmpu cr7, f3, f31
+	.int 0x7C600026 ; mfcr r3
+	.int 0x7C800026 ; mfcr r4
+	fmuls f10, f30, f10
+	clrlwi	r3, r3, 31
+	rlwinm r4, r4, 31, 31, 31
+	or r3, r4, r3
+	cmplwi	r3, 0
+	bne	cr0, _94406c74bd2870f3_LBB0_21
+	lis r3, _94406c74bd2870f3_LCPI0_1@ha
+	lfs f31, _94406c74bd2870f3_LCPI0_1@l(r3)
+	fcmpu cr0, f3, f31
+	bgt	cr0, _94406c74bd2870f3_LBB0_21
+	lis r3, _94406c74bd2870f3_LCPI0_2@ha
+	lfs f31, _94406c74bd2870f3_LCPI0_2@l(r3)
+	lis r3, _94406c74bd2870f3_LCPI0_3@ha
+	lfs f30, _94406c74bd2870f3_LCPI0_3@l(r3)
+	.int 0xFFA01834 ; frsqrte f29, f3
+	fmul f31, f3, f31
+	fmul f28, f31, f29
+	fmadd f28, f28, f29, f30
+	fmul f29, f29, f28
+	fmul f28, f31, f29
+	fmadd f28, f28, f29, f30
+	fmul f29, f29, f28
+	fmul f31, f31, f29
+	fmadd f31, f31, f29, f30
+	fmul f31, f29, f31
+	fmul f3, f31, f3
+	frsp f3, f3
+_94406c74bd2870f3_LBB0_21:
+	lis r3, _94406c74bd2870f3_LCPI0_0@ha
+	lfs f31, _94406c74bd2870f3_LCPI0_0@l(r3)
+	fdivs f10, f10, f13
+	fcmpu cr7, f4, f31
+	.int 0x7C600026 ; mfcr r3
+	.int 0x7C800026 ; mfcr r4
+	clrlwi	r3, r3, 31
+	rlwinm r4, r4, 31, 31, 31
+	or r3, r4, r3
+	cmplwi	r3, 0
+	bne	cr0, _94406c74bd2870f3_LBB0_24
+	lis r3, _94406c74bd2870f3_LCPI0_1@ha
+	lfs f13, _94406c74bd2870f3_LCPI0_1@l(r3)
+	fcmpu cr0, f4, f13
+	bgt	cr0, _94406c74bd2870f3_LBB0_24
+	lis r3, _94406c74bd2870f3_LCPI0_2@ha
+	lfs f13, _94406c74bd2870f3_LCPI0_2@l(r3)
+	lis r3, _94406c74bd2870f3_LCPI0_3@ha
+	lfs f30, _94406c74bd2870f3_LCPI0_3@l(r3)
+	.int 0xFFA02034 ; frsqrte f29, f4
+	fmul f13, f4, f13
+	fmul f28, f13, f29
+	fmadd f28, f28, f29, f30
+	fmul f29, f29, f28
+	fmul f28, f13, f29
+	fmadd f28, f28, f29, f30
+	fmul f29, f29, f28
+	fmul f13, f13, f29
+	fmadd f13, f13, f29, f30
+	fmul f13, f29, f13
+	fmul f4, f13, f4
+	frsp f4, f4
+_94406c74bd2870f3_LBB0_24:
+	fcmpu cr7, f5, f31
+	.int 0x7C600026 ; mfcr r3
+	.int 0x7C800026 ; mfcr r4
+	fmuls f13, f8, f9
+	clrlwi	r3, r3, 31
+	rlwinm r4, r4, 31, 31, 31
+	or r3, r4, r3
+	cmplwi	r3, 0
+	fmuls f31, f7, f10
+	bne	cr0, _94406c74bd2870f3_LBB0_27
+	lis r3, _94406c74bd2870f3_LCPI0_1@ha
+	lfs f30, _94406c74bd2870f3_LCPI0_1@l(r3)
+	fcmpu cr0, f5, f30
+	bgt	cr0, _94406c74bd2870f3_LBB0_27
+	lis r3, _94406c74bd2870f3_LCPI0_2@ha
+	lfs f30, _94406c74bd2870f3_LCPI0_2@l(r3)
+	lis r3, _94406c74bd2870f3_LCPI0_3@ha
+	lfs f29, _94406c74bd2870f3_LCPI0_3@l(r3)
+	.int 0xFF802834 ; frsqrte f28, f5
+	fmul f30, f5, f30
+	fmul f27, f30, f28
+	fmadd f27, f27, f28, f29
+	fmul f28, f28, f27
+	fmul f27, f30, f28
+	fmadd f27, f27, f28, f29
+	fmul f28, f28, f27
+	fmul f30, f30, f28
+	fmadd f30, f30, f28, f29
+	fmul f30, f28, f30
+	fmul f5, f30, f5
+	frsp f5, f5
+_94406c74bd2870f3_LBB0_27:
+	lis r3, _94406c74bd2870f3_LCPI0_0@ha
+	lfs f30, _94406c74bd2870f3_LCPI0_0@l(r3)
+	fmuls f11, f11, f13
+	fmuls f13, f8, f31
+	fcmpu cr7, f6, f30
+	.int 0x7C600026 ; mfcr r3
+	.int 0x7C800026 ; mfcr r4
+	clrlwi	r3, r3, 31
+	rlwinm r4, r4, 31, 31, 31
+	or r3, r4, r3
+	cmplwi	r3, 0
+	bne	cr0, _94406c74bd2870f3_LBB0_30
+	lis r3, _94406c74bd2870f3_LCPI0_1@ha
+	lfs f31, _94406c74bd2870f3_LCPI0_1@l(r3)
+	fcmpu cr0, f6, f31
+	bgt	cr0, _94406c74bd2870f3_LBB0_30
+	lis r3, _94406c74bd2870f3_LCPI0_2@ha
+	lfs f31, _94406c74bd2870f3_LCPI0_2@l(r3)
+	lis r3, _94406c74bd2870f3_LCPI0_3@ha
+	lfs f30, _94406c74bd2870f3_LCPI0_3@l(r3)
+	.int 0xFFA03034 ; frsqrte f29, f6
+	fmul f31, f6, f31
+	fmul f28, f31, f29
+	fmadd f28, f28, f29, f30
+	fmul f29, f29, f28
+	fmul f28, f31, f29
+	fmadd f28, f28, f29, f30
+	fmul f29, f29, f28
+	fmul f31, f31, f29
+	fmadd f31, f31, f29, f30
+	fmul f31, f29, f31
+	fmul f6, f31, f6
+	frsp f6, f6
+_94406c74bd2870f3_LBB0_30:
 	fcmpu cr7, f3, f4
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
-	fmuls f11, f10, f31
+	fmuls f11, f10, f11
 	clrlwi	r3, r3, 31
 	rlwinm r4, r4, 29, 31, 31
 	or r3, r4, r3
 	cmplwi	r3, 0
-	fmuls f12, f5, f30
-	fsqrts f5, f13
-	fsqrts f6, f6
-	bne	cr0, _94406c74bd2870f3_LBB0_16
+	fmuls f12, f12, f13
+	bne	cr0, _94406c74bd2870f3_LBB0_38
 	fcmpu cr7, f3, f5
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
@@ -134,7 +336,7 @@ _94406c74bd2870f3_LBB0_8:
 	rlwinm r4, r4, 29, 31, 31
 	or r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_16
+	bne	cr0, _94406c74bd2870f3_LBB0_38
 	fcmpu cr7, f3, f6
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
@@ -142,7 +344,7 @@ _94406c74bd2870f3_LBB0_8:
 	rlwinm r4, r4, 29, 31, 31
 	or r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_16
+	bne	cr0, _94406c74bd2870f3_LBB0_38
 	lis r3, _94406c74bd2870f3_LCPI0_0@ha
 	lfs f13, _94406c74bd2870f3_LCPI0_0@l(r3)
 	fsubs f8, f8, f12
@@ -155,9 +357,9 @@ _94406c74bd2870f3_LBB0_8:
 	xori r4, r4, 1
 	and r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_13
+	bne	cr0, _94406c74bd2870f3_LBB0_35
 	fneg f4, f4
-_94406c74bd2870f3_LBB0_13:
+_94406c74bd2870f3_LBB0_35:
 	fsubs f7, f9, f7
 	fcmpu cr7, f7, f13
 	.int 0x7C600026 ; mfcr r3
@@ -168,12 +370,12 @@ _94406c74bd2870f3_LBB0_13:
 	xori r4, r4, 1
 	and r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_15
+	bne	cr0, _94406c74bd2870f3_LBB0_37
 	fneg f5, f5
-_94406c74bd2870f3_LBB0_15:
+_94406c74bd2870f3_LBB0_37:
 	fsubs f7, f11, f10
-	b _94406c74bd2870f3_LBB0_32
-_94406c74bd2870f3_LBB0_16:
+	b _94406c74bd2870f3_LBB0_54
+_94406c74bd2870f3_LBB0_38:
 	fcmpu cr7, f4, f3
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
@@ -181,7 +383,7 @@ _94406c74bd2870f3_LBB0_16:
 	rlwinm r4, r4, 29, 31, 31
 	or r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_24
+	bne	cr0, _94406c74bd2870f3_LBB0_46
 	fcmpu cr7, f4, f5
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
@@ -189,7 +391,7 @@ _94406c74bd2870f3_LBB0_16:
 	rlwinm r4, r4, 29, 31, 31
 	or r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_24
+	bne	cr0, _94406c74bd2870f3_LBB0_46
 	fcmpu cr7, f4, f6
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
@@ -197,7 +399,7 @@ _94406c74bd2870f3_LBB0_16:
 	rlwinm r4, r4, 29, 31, 31
 	or r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_24
+	bne	cr0, _94406c74bd2870f3_LBB0_46
 	lis r3, _94406c74bd2870f3_LCPI0_0@ha
 	lfs f13, _94406c74bd2870f3_LCPI0_0@l(r3)
 	fsubs f8, f8, f12
@@ -210,9 +412,9 @@ _94406c74bd2870f3_LBB0_16:
 	xori r4, r4, 1
 	and r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_21
+	bne	cr0, _94406c74bd2870f3_LBB0_43
 	fneg f3, f3
-_94406c74bd2870f3_LBB0_21:
+_94406c74bd2870f3_LBB0_43:
 	fadds f8, f10, f11
 	fcmpu cr7, f8, f13
 	.int 0x7C600026 ; mfcr r3
@@ -223,12 +425,12 @@ _94406c74bd2870f3_LBB0_21:
 	xori r4, r4, 1
 	and r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_23
+	bne	cr0, _94406c74bd2870f3_LBB0_45
 	fneg f5, f5
-_94406c74bd2870f3_LBB0_23:
+_94406c74bd2870f3_LBB0_45:
 	fadds f7, f7, f9
-	b _94406c74bd2870f3_LBB0_32
-_94406c74bd2870f3_LBB0_24:
+	b _94406c74bd2870f3_LBB0_54
+_94406c74bd2870f3_LBB0_46:
 	fcmpu cr7, f5, f3
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
@@ -236,7 +438,7 @@ _94406c74bd2870f3_LBB0_24:
 	rlwinm r4, r4, 29, 31, 31
 	or r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_35
+	bne	cr0, _94406c74bd2870f3_LBB0_65
 	fcmpu cr7, f5, f4
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
@@ -244,7 +446,7 @@ _94406c74bd2870f3_LBB0_24:
 	rlwinm r4, r4, 29, 31, 31
 	or r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_35
+	bne	cr0, _94406c74bd2870f3_LBB0_65
 	fcmpu cr7, f5, f6
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
@@ -252,7 +454,7 @@ _94406c74bd2870f3_LBB0_24:
 	rlwinm r4, r4, 29, 31, 31
 	or r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_35
+	bne	cr0, _94406c74bd2870f3_LBB0_65
 	lis r3, _94406c74bd2870f3_LCPI0_0@ha
 	lfs f13, _94406c74bd2870f3_LCPI0_0@l(r3)
 	fsubs f7, f9, f7
@@ -265,9 +467,9 @@ _94406c74bd2870f3_LBB0_24:
 	xori r4, r4, 1
 	and r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_29
+	bne	cr0, _94406c74bd2870f3_LBB0_51
 	fneg f3, f3
-_94406c74bd2870f3_LBB0_29:
+_94406c74bd2870f3_LBB0_51:
 	fadds f7, f10, f11
 	fcmpu cr7, f7, f13
 	.int 0x7C600026 ; mfcr r3
@@ -278,11 +480,11 @@ _94406c74bd2870f3_LBB0_29:
 	xori r4, r4, 1
 	and r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_31
+	bne	cr0, _94406c74bd2870f3_LBB0_53
 	fneg f4, f4
-_94406c74bd2870f3_LBB0_31:
+_94406c74bd2870f3_LBB0_53:
 	fadds f7, f8, f12
-_94406c74bd2870f3_LBB0_32:
+_94406c74bd2870f3_LBB0_54:
 	fcmpu cr7, f7, f13
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
@@ -292,110 +494,177 @@ _94406c74bd2870f3_LBB0_32:
 	xori r4, r4, 1
 	and r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_34
+	bne	cr0, _94406c74bd2870f3_LBB0_56
 	fneg f6, f6
-_94406c74bd2870f3_LBB0_34:
+_94406c74bd2870f3_LBB0_56:
+	lis r3, _94406c74bd2870f3_LCPI0_0@ha
+	lfs f10, _94406c74bd2870f3_LCPI0_0@l(r3)
 	fmuls f7, f4, f3
 	fmuls f7, f5, f7
-	fmuls f7, f6, f7
-	fsqrts f10, f7
-	lis r4, headsetQuaternionZ@ha
-	lis r6, headsetQuaternionX@ha
-	fdivs f8, f3, f10
-	lis r3, headsetQuaternionW@ha
-	lis r5, headsetQuaternionY@ha
-	lfs f11, headsetQuaternionX@l(r6)
-	lis r6, distanceSetting@ha
-	lis r7, _94406c74bd2870f3_LCPI0_3@ha
-	lis r8, _94406c74bd2870f3_LCPI0_4@ha
-	lfd f30, 32(r1)
-	lfd f29, 24(r1)
-	lfd f28, 16(r1)
-	lfd f27, 8(r1)
-	fdivs f9, f4, f10
-	lfs f4, headsetQuaternionW@l(r3)
-	lis r3, newTargetPosX@ha
-	fdivs f7, f5, f10
-	lfs f5, _94406c74bd2870f3_LCPI0_3@l(r7)
-	fdivs f3, f6, f10
-	lfs f10, headsetQuaternionZ@l(r4)
-	lis r4, newTargetPosY@ha
-	lfs f6, headsetQuaternionY@l(r5)
-	lis r5, _94406c74bd2870f3_LCPI0_5@ha
-	fneg f13, f9
-	fmuls f12, f9, f10
-	fmuls f31, f11, f13
-	fmadds f12, f8, f4, f12
-	fmadds f31, f8, f6, f31
-	fneg f8, f8
-	fmuls f9, f9, f4
-	fmuls f13, f6, f13
-	fmadds f9, f8, f10, f9
-	fmadds f8, f8, f11, f13
-	fneg f13, f7
-	fmadds f12, f13, f6, f12
-	fmadds f9, f7, f11, f9
-	fmadds f7, f7, f4, f31
-	fmadds f9, f3, f6, f9
-	fmadds f8, f13, f10, f8
-	lfs f13, distanceSetting@l(r6)
-	fmadds f7, f3, f10, f7
-	fnmadds f10, f3, f11, f12
-	fmadds f4, f3, f4, f8
-	fmuls f8, f9, f10
-	fmadds f8, f7, f4, f8
-	fmadds f3, f3, f11, f12
-	fadds f8, f8, f8
-	fmuls f12, f3, f4
-	lfs f31, _94406c74bd2870f3_LCPI0_5@l(r5)
-	lis r5, newCamPosY@ha
-	fmadds f10, f8, f13, f2
-	lfs f11, newTargetPosY@l(r4)
-	fmadds f12, f9, f7, f12
-	stfs f10, newCamPosY@l(r5)
-	lis r5, newCamRotX@ha
-	lfs f10, newTargetPosX@l(r3)
-	fadds f12, f12, f12
-	stfs f12, newCamRotX@l(r5)
-	lis r5, newTargetPosZ@ha
-	lfs f12, newTargetPosZ@l(r5)
+	fmuls f9, f6, f7
+	fcmpu cr7, f9, f10
+	.int 0x7C600026 ; mfcr r3
+	.int 0x7C800026 ; mfcr r4
+	clrlwi	r3, r3, 31
+	rlwinm r4, r4, 31, 31, 31
+	or r3, r4, r3
+	cmplwi	r3, 0
+	bne	cr0, _94406c74bd2870f3_LBB0_61
+	fcmpu cr0, f9, f10
+	bge cr0, _94406c74bd2870f3_LBB0_59
+	fsubs f7, f9, f9
+	fdivs f9, f7, f7
+	b _94406c74bd2870f3_LBB0_61
+_94406c74bd2870f3_LBB0_59:
+	lis r3, _94406c74bd2870f3_LCPI0_1@ha
+	lfs f7, _94406c74bd2870f3_LCPI0_1@l(r3)
+	fcmpu cr0, f9, f7
+	bgt	cr0, _94406c74bd2870f3_LBB0_61
+	lis r3, _94406c74bd2870f3_LCPI0_2@ha
+	lfs f7, _94406c74bd2870f3_LCPI0_2@l(r3)
+	lis r3, _94406c74bd2870f3_LCPI0_3@ha
+	lfs f8, _94406c74bd2870f3_LCPI0_3@l(r3)
+	.int 0xFD604834 ; frsqrte f11, f9
+	fmul f7, f9, f7
+	fmul f12, f7, f11
+	fmadd f12, f12, f11, f8
+	fmul f11, f11, f12
+	fmul f12, f7, f11
+	fmadd f12, f12, f11, f8
+	fmul f11, f11, f12
+	fmul f7, f7, f11
+	fmadd f7, f7, f11, f8
+	fmul f7, f11, f7
+	fmul f7, f7, f9
+	frsp f9, f7
+_94406c74bd2870f3_LBB0_61:
+	lis r3, newTargetPosY@ha
+	lis r5, newTargetPosX@ha
+	lfs f11, newTargetPosY@l(r3)
+	lis r4, newTargetPosZ@ha
+	lfs f7, newTargetPosX@l(r5)
+	lis r6, headsetQuaternionW@ha
+	lfs f12, newTargetPosZ@l(r4)
 	fmuls f11, f11, f11
-	fmadds f10, f10, f10, f11
-	fmuls f11, f7, f7
-	fmuls f7, f3, f7
-	fmadds f7, f9, f4, f7
-	fmadds f10, f12, f12, f10
-	fmuls f7, f7, f31
-	fsqrts f10, f10
-	fmadds f9, f7, f10, f0
-	lfs f6, _94406c74bd2870f3_LCPI0_4@l(r8)
-	fmadds f11, f3, f3, f11
-	stfs f9, newTargetPosX@l(r3)
-	fneg f9, f8
-	fmadds f2, f9, f10, f2
-	stfs f2, newTargetPosY@l(r4)
-	fmuls f2, f4, f4
-	fmadds f2, f3, f3, f2
-	fneg f4, f7
-	lis r3, newCamPosX@ha
-	fmadds f3, f2, f6, f5
-	fnmadds f2, f2, f6, f5
-	fmadds f0, f4, f13, f0
+	fmadds f7, f7, f7, f11
+	lfs f8, headsetQuaternionW@l(r6)
+	fmadds f7, f12, f12, f7
+	fcmpu cr7, f7, f10
+	lis r6, headsetQuaternionZ@ha
+	lfs f10, headsetQuaternionZ@l(r6)
+	.int 0x7CC00026 ; mfcr r6
+	.int 0x7CE00026 ; mfcr r7
+	clrlwi	r6, r6, 31
+	rlwinm r7, r7, 31, 31, 31
+	or r6, r7, r6
+	lis r7, headsetQuaternionY@ha
+	cmplwi	r6, 0
+	lis r6, headsetQuaternionX@ha
+	lfs f12, headsetQuaternionY@l(r7)
+	lfs f11, headsetQuaternionX@l(r6)
+	bne	cr0, _94406c74bd2870f3_LBB0_64
+	lis r6, _94406c74bd2870f3_LCPI0_1@ha
+	lfs f13, _94406c74bd2870f3_LCPI0_1@l(r6)
+	fcmpu cr0, f7, f13
+	bgt	cr0, _94406c74bd2870f3_LBB0_64
+	lis r6, _94406c74bd2870f3_LCPI0_2@ha
+	lfs f13, _94406c74bd2870f3_LCPI0_2@l(r6)
+	lis r6, _94406c74bd2870f3_LCPI0_3@ha
+	lfs f31, _94406c74bd2870f3_LCPI0_3@l(r6)
+	.int 0xFFC03834 ; frsqrte f30, f7
+	fmul f13, f7, f13
+	fmul f29, f13, f30
+	fmadd f29, f29, f30, f31
+	fmul f30, f30, f29
+	fmul f29, f13, f30
+	fmadd f29, f29, f30, f31
+	fmul f30, f30, f29
+	fmul f13, f13, f30
+	fmadd f13, f13, f30, f31
+	fmul f13, f30, f13
+	fmul f7, f13, f7
+	frsp f7, f7
+_94406c74bd2870f3_LBB0_64:
+	fdivs f6, f6, f9
+	lis r6, _94406c74bd2870f3_LCPI0_6@ha
+	fdivs f5, f5, f9
+	fdivs f13, f3, f9
+	lfs f3, _94406c74bd2870f3_LCPI0_6@l(r6)
+	lis r6, _94406c74bd2870f3_LCPI0_7@ha
+	fdivs f9, f4, f9
+	lfs f4, _94406c74bd2870f3_LCPI0_7@l(r6)
+	lis r6, _94406c74bd2870f3_LCPI0_8@ha
+	lfs f31, _94406c74bd2870f3_LCPI0_8@l(r6)
+	lis r6, distanceSetting@ha
+	lfs f30, distanceSetting@l(r6)
+	lis r6, newCamPosY@ha
+	fneg f28, f9
+	fneg f29, f13
+	fmuls f27, f9, f8
+	fmuls f26, f12, f28
+	fmuls f9, f9, f10
+	fmadds f27, f29, f10, f27
+	fmadds f29, f29, f11, f26
+	fneg f26, f5
+	fmadds f9, f13, f8, f9
+	fmuls f28, f11, f28
+	fmadds f9, f26, f12, f9
+	fmadds f13, f13, f12, f28
+	fmadds f28, f5, f11, f27
+	fmadds f29, f26, f10, f29
+	fmadds f5, f5, f8, f13
+	fmadds f12, f6, f12, f28
+	fnmadds f13, f6, f11, f9
+	fmadds f8, f6, f8, f29
+	fmadds f5, f6, f10, f5
+	fmuls f10, f12, f13
+	fmadds f10, f5, f8, f10
+	fmadds f6, f6, f11, f9
+	fadds f10, f10, f10
+	fmuls f9, f6, f8
+	fmadds f13, f10, f30, f1
+	fmadds f9, f12, f5, f9
+	stfs f13, newCamPosY@l(r6)
+	lis r6, newCamRotX@ha
+	fadds f9, f9, f9
+	stfs f9, newCamRotX@l(r6)
+	fmuls f9, f5, f5
+	fmuls f5, f6, f5
+	fmadds f5, f12, f8, f5
+	fmuls f8, f8, f8
+	fmadds f9, f6, f6, f9
+	fmadds f6, f6, f6, f8
+	fmadds f9, f9, f4, f3
+	fmadds f8, f6, f4, f3
+	fnmadds f3, f6, f4, f3
+	fneg f4, f10
 	lis r6, newCamRotY@ha
-	fmadds f11, f11, f6, f5
-	lis r4, newCamPosZ@ha
-	fmadds f2, f2, f10, f1
-	fmadds f1, f3, f13, f1
-	stfs f0, newCamPosX@l(r3)
+	fmuls f5, f5, f31
+	fmadds f1, f4, f7, f1
+	stfs f9, newCamRotY@l(r6)
+	fmadds f9, f5, f7, f0
+	stfs f1, newTargetPosY@l(r3)
+	fneg f1, f5
+	lis r6, newCamPosX@ha
+	stfs f9, newTargetPosX@l(r5)
+	lis r5, newCamPosZ@ha
+	fmadds f3, f3, f7, f2
+	fmadds f2, f8, f30, f2
+	fmadds f0, f1, f30, f0
 	lis r3, newCamRotZ@ha
-	stfs f11, newCamRotY@l(r6)
-	stfs f2, newTargetPosZ@l(r5)
-	stfs f1, newCamPosZ@l(r4)
-	stfs f8, newCamRotZ@l(r3)
-	lfd f31, 40(r1)
-	addi r1, r1, 48
+	stfs f3, newTargetPosZ@l(r4)
+	stfs f2, newCamPosZ@l(r5)
+	stfs f0, newCamPosX@l(r6)
+	stfs f10, newCamRotZ@l(r3)
+	lfd f31, 56(r1)
+	lfd f30, 48(r1)
+	lfd f29, 40(r1)
+	lfd f28, 32(r1)
+	lfd f27, 24(r1)
+	lfd f26, 16(r1)
+	addi r1, r1, 64
 	blr
-_94406c74bd2870f3_LBB0_35:
+_94406c74bd2870f3_LBB0_65:
 	fcmpu cr7, f6, f3
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
@@ -403,7 +672,7 @@ _94406c74bd2870f3_LBB0_35:
 	rlwinm r4, r4, 29, 31, 31
 	or r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_34
+	bne	cr0, _94406c74bd2870f3_LBB0_56
 	fcmpu cr7, f6, f4
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
@@ -411,7 +680,7 @@ _94406c74bd2870f3_LBB0_35:
 	rlwinm r4, r4, 29, 31, 31
 	or r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_34
+	bne	cr0, _94406c74bd2870f3_LBB0_56
 	fcmpu cr7, f6, f5
 	.int 0x7C600026 ; mfcr r3
 	.int 0x7C800026 ; mfcr r4
@@ -419,7 +688,7 @@ _94406c74bd2870f3_LBB0_35:
 	rlwinm r4, r4, 29, 31, 31
 	or r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_34
+	bne	cr0, _94406c74bd2870f3_LBB0_56
 	lis r3, _94406c74bd2870f3_LCPI0_0@ha
 	lfs f13, _94406c74bd2870f3_LCPI0_0@l(r3)
 	fsubs f10, f11, f10
@@ -432,9 +701,9 @@ _94406c74bd2870f3_LBB0_35:
 	xori r4, r4, 1
 	and r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_40
+	bne	cr0, _94406c74bd2870f3_LBB0_70
 	fneg f3, f3
-_94406c74bd2870f3_LBB0_40:
+_94406c74bd2870f3_LBB0_70:
 	fadds f7, f7, f9
 	fcmpu cr7, f7, f13
 	.int 0x7C600026 ; mfcr r3
@@ -445,9 +714,9 @@ _94406c74bd2870f3_LBB0_40:
 	xori r4, r4, 1
 	and r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_42
+	bne	cr0, _94406c74bd2870f3_LBB0_72
 	fneg f4, f4
-_94406c74bd2870f3_LBB0_42:
+_94406c74bd2870f3_LBB0_72:
 	fadds f7, f8, f12
 	fcmpu cr7, f7, f13
 	.int 0x7C600026 ; mfcr r3
@@ -458,9 +727,9 @@ _94406c74bd2870f3_LBB0_42:
 	xori r4, r4, 1
 	and r3, r4, r3
 	cmplwi	r3, 0
-	bne	cr0, _94406c74bd2870f3_LBB0_34
+	bne	cr0, _94406c74bd2870f3_LBB0_56
 	fneg f5, f5
-	b _94406c74bd2870f3_LBB0_34
+	b _94406c74bd2870f3_LBB0_56
 _94406c74bd2870f3_Lfunc_end0:
 
 	.align 4
@@ -556,7 +825,7 @@ distanceSetting:
 	.int	0x3f800000
 
 
-; --- Address Patches ---
+; --- Patch Directives ---
 0x023F90E0 = nop
 0x101E55F8 = .float 3.0
 0x10416BF0 = .int 0x00000000
