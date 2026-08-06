@@ -330,6 +330,10 @@ void AssemblyConverter::convertClangToCemu(
     util_stringReplace(inputLine, "_IMPORT_GX2_", "import.gx2.");
     util_stringReplace(inputLine, "_IMPORT_COREINIT_", "import.coreinit.");
 
+    // Keep the final instruction normalization idempotent so instructions that
+    // passed through one of the directive/parser paths are normalized as well.
+    inputLine = AsmUpdater_fixInstruction(inputLine);
+
     outputTextFile.lines.emplace_back(inputLine);
   }
 }

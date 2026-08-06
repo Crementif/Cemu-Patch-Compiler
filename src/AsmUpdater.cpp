@@ -143,6 +143,31 @@ std::string AsmUpdater_fixInstruction(std::string_view instructionText)
 	DissectedInstruction di;
 	if (dissectInstruction(instructionText, di))
 	{
+		// Clang uses BUN/BNU for the unordered bit produced by floating-point
+		// comparisons. Cemu's assembler accepts the canonical BC form instead.
+		if ((di.name == "BUN" || di.name == "BNU") &&
+			di.operandStr.size() == 2)
+		{
+			std::string_view crOperand = di.operandStr[0];
+			if (crOperand.size() >= 3 &&
+				(crOperand[0] == 'c' || crOperand[0] == 'C') &&
+				(crOperand[1] == 'r' || crOperand[1] == 'R'))
+			{
+				uint32_t crField = 0;
+				auto [end, ec] = std::from_chars(
+					crOperand.data() + 2, crOperand.data() + crOperand.size(),
+					crField);
+				if (ec == std::errc() && end == crOperand.data() + crOperand.size() &&
+					crField < 8)
+				{
+					const uint32_t branchOption = di.name == "BUN" ? 12 : 4;
+					const uint32_t conditionBit = crField * 4 + 3;
+					return std::format("\tbc {}, {}, {}", branchOption,
+						conditionBit, di.operandStr[1]);
+				}
+			}
+		}
+
 		if (isForbiddenInstruction(di.name.c_str()))
 		{
 			std::string hexVal = assembleInstructionToBytes(instructionText);
