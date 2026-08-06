@@ -1,5 +1,6 @@
 param (
     [string]$CemuDir = "",
+    [string]$CemuExecutable = "",
     [string]$GamePath = "",
     [string]$SourceDir = "",
     [string]$GraphicPackName = "PatchCompiler_Testing",
@@ -36,6 +37,10 @@ function Write-Success($Message) {
 
 function Write-Failure($Message) {
     Write-Host "[FAIL] $Message" -ForegroundColor Red
+}
+
+function Write-Skip($Message) {
+    Write-Host "[SKIP] $Message" -ForegroundColor Yellow
 }
 
 function Get-CemuLogCandidates {
@@ -86,17 +91,17 @@ function Get-CompilerExe {
     param([string]$BaseDir)
 
     $Candidates = @(
+        (Join-Path $BaseDir "build\CemuPatchCompiler-release.exe"),
+        (Join-Path $BaseDir "build\CemuPatchCompiler-debug.exe"),
+        (Join-Path $BaseDir "build\bin\CemuPatchCompiler-release.exe"),
+        (Join-Path $BaseDir "build\bin\CemuPatchCompiler-debug.exe"),
         (Join-Path $BaseDir "cmake-build-local-release\Release\CemuPatchCompiler-release.exe"),
         (Join-Path $BaseDir "cmake-build-release\Release\CemuPatchCompiler-release.exe"),
         (Join-Path $BaseDir "cmake-build-release\CemuPatchCompiler-release.exe"),
         (Join-Path $BaseDir "cmake-build-debug\Debug\CemuPatchCompiler-debug.exe"),
         (Join-Path $BaseDir "cmake-build-debug\CemuPatchCompiler-debug.exe"),
         (Join-Path $BaseDir "bin\CemuPatchCompiler-release.exe"),
-        (Join-Path $BaseDir "bin\CemuPatchCompiler-debug.exe"),
-        (Join-Path $BaseDir "build\bin\CemuPatchCompiler-release.exe"),
-        (Join-Path $BaseDir "build\bin\CemuPatchCompiler-debug.exe"),
-        (Join-Path $BaseDir "build\CemuPatchCompiler-release.exe"),
-        (Join-Path $BaseDir "build\CemuPatchCompiler-debug.exe")
+        (Join-Path $BaseDir "bin\CemuPatchCompiler-debug.exe")
     )
 
     foreach ($Candidate in $Candidates) {
@@ -200,7 +205,7 @@ function Start-CemuAndWaitForMetadata {
     )
 
     Clear-CemuLogs -BaseDir $BaseDir
-    $Process = Start-Process -FilePath $Executable -ArgumentList @("-g", $LaunchGamePath) -WorkingDirectory $BaseDir -PassThru
+    $Process = Start-Process -FilePath $Executable -ArgumentList @("-g", $LaunchGamePath) -WorkingDirectory $BaseDir -WindowStyle Hidden -PassThru
 
     try {
         $Deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -238,7 +243,7 @@ function Invoke-CemuSmokeRun {
     )
 
     Clear-CemuLogs -BaseDir $BaseDir
-    $Process = Start-Process -FilePath $Executable -ArgumentList @("-g", $LaunchGamePath) -WorkingDirectory $BaseDir -PassThru
+    $Process = Start-Process -FilePath $Executable -ArgumentList @("-g", $LaunchGamePath) -WorkingDirectory $BaseDir -WindowStyle Hidden -PassThru
 
     try {
         Start-Sleep -Seconds $Seconds
@@ -266,7 +271,10 @@ if ([string]::IsNullOrWhiteSpace($GamePath) -or -not (Test-Path $GamePath)) {
     exit 1
 }
 
-$CemuExe = Join-Path $CemuDir "Cemu.exe"
+$CemuExe = $CemuExecutable
+if ([string]::IsNullOrWhiteSpace($CemuExe)) {
+    $CemuExe = Join-Path $CemuDir "Cemu.exe"
+}
 if (-not (Test-Path $CemuExe)) {
     Write-Failure "Cemu executable not found at $CemuExe"
     exit 1
@@ -305,7 +313,7 @@ titleIds = $($Metadata.TitleId)
 name = PatchCompiler Testing
 path = "PatchCompiler/Testing"
 description = Auto-generated local smoke test for CemuPatchCompiler.
-version = 7
+version = 8
 default = 1
 "@
 
@@ -313,9 +321,11 @@ Set-Content -Path $RulesFile -Value $RulesContent -Encoding ascii
 Write-Info "Rules file: $RulesFile"
 
 $FailedExamples = @()
+$SkippedExamples = @()
 
 foreach ($ExampleDir in $ExamplesToRun) {
     $ExampleName = Split-Path $ExampleDir -Leaf
+    $RequiresEntryCallback = $false
     Write-Header "Testing Example: $ExampleName"
 
     # Clean the graphic pack directory of old asm files to prevent symbol duplication errors
@@ -362,6 +372,9 @@ foreach ($ExampleDir in $ExamplesToRun) {
             throw "SkipCompile was set but no compiled patch exists at $PatchFile."
         }
 
+        $RequiresEntryCallback =
+            [System.IO.File]::ReadAllText($PatchFile) -match '(?m)^\.callback\s+entry\b'
+
         Write-Info "Launching Homebrew with patch..."
         $LogLines = Invoke-CemuSmokeRun -BaseDir $CemuDir -Executable $CemuExe -LaunchGamePath $GamePath -Seconds $DurationSeconds
 
@@ -383,6 +396,16 @@ foreach ($ExampleDir in $ExamplesToRun) {
         }
 
         if ($Errors.Count -gt 0) {
+            $CallbackUnsupported = $RequiresEntryCallback -and
+                (($Errors | Where-Object {
+                    $_ -match "Instruction '\.CALLBACK' is unknown or not supported"
+                }).Count -gt 0)
+            if ($CallbackUnsupported) {
+                Write-Skip "Example '$ExampleName' requires Cemu 2.7 or newer for .callback entry support."
+                $SkippedExamples += $ExampleName
+                continue
+            }
+
             Write-Failure "Cemu reported patch application errors:"
             foreach ($ErrorLine in $Errors) {
                 Write-Host "  $ErrorLine" -ForegroundColor Red
@@ -406,5 +429,9 @@ if ($FailedExamples.Count -gt 0) {
     exit 1
 }
 
-Write-Success "All examples verified successfully!"
+if ($SkippedExamples.Count -gt 0) {
+    Write-Success "All supported examples verified successfully; skipped: $($SkippedExamples -join ', ')"
+} else {
+    Write-Success "All examples verified successfully!"
+}
 exit 0
