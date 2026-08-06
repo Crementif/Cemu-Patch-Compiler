@@ -426,11 +426,11 @@ void AssemblyConverter::analyzeSymbols(const TextFile &inputFile) {
 void AssemblyConverter::finalize(TextFile &outputTextFile) {
   if (!m_patchDirectives.empty()) {
     outputTextFile.lines.emplace_back("");
-    outputTextFile.lines.emplace_back("; --- Address Patches ---");
+    outputTextFile.lines.emplace_back("; --- Patch Directives ---");
     for (const auto &directive : m_patchDirectives) {
       outputTextFile.lines.emplace_back(directive);
     }
-    printf("Emitted %d address patch directive(s).\n",
+    printf("Emitted %d patch directive(s).\n",
            (int)m_patchDirectives.size());
     fflush(stdout);
   }
