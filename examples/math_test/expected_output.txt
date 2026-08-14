@@ -1,0 +1,5 @@
+# Console output that the title must produce while the patch is applied.
+# patchMathSelfTest() runs from the entry callback and only reports PASS when
+# every math helper check returned the expected result.
+[PatchCompiler Math Test] START
+[PatchCompiler Math Test] PASS

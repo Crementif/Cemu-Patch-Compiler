@@ -73,6 +73,76 @@ function Get-CemuLogPath {
     return ($Candidates | Sort-Object { (Get-Item $_).LastWriteTimeUtc } -Descending | Select-Object -First 1)
 }
 
+function Get-CemuSettingsPath {
+    param([string]$BaseDir)
+
+    $Candidates = @(
+        (Join-Path $BaseDir "settings.xml"),
+        (Join-Path $env:APPDATA "Cemu\settings.xml")
+    )
+
+    foreach ($Candidate in $Candidates) {
+        if (Test-Path $Candidate) {
+            return $Candidate
+        }
+    }
+
+    return $null
+}
+
+function Enable-CemuConsoleLogging {
+    # OSReport only reaches log.txt when the CoreinitLogging flag (bit 17) is set
+    param([string]$BaseDir)
+
+    $SettingsPath = Get-CemuSettingsPath -BaseDir $BaseDir
+    if ($null -eq $SettingsPath) {
+        return $null
+    }
+
+    $OriginalContents = [System.IO.File]::ReadAllText($SettingsPath)
+    if ($OriginalContents -notmatch '<logflag>(\d+)</logflag>') {
+        return $null
+    }
+
+    $CoreinitLoggingFlag = [uint64]1 -shl 17
+    $CurrentFlags = [uint64]$matches[1]
+    if (($CurrentFlags -band $CoreinitLoggingFlag) -ne 0) {
+        return $null
+    }
+
+    $UpdatedFlags = $CurrentFlags -bor $CoreinitLoggingFlag
+    $UpdatedContents = $OriginalContents -replace '<logflag>\d+</logflag>', "<logflag>$UpdatedFlags</logflag>"
+    [System.IO.File]::WriteAllText($SettingsPath, $UpdatedContents)
+
+    return [pscustomobject]@{
+        Path = $SettingsPath
+        OriginalContents = $OriginalContents
+    }
+}
+
+function Restore-CemuSettings {
+    param($State)
+
+    if ($null -eq $State) {
+        return
+    }
+
+    [System.IO.File]::WriteAllText($State.Path, $State.OriginalContents)
+}
+
+function Get-ExpectedConsoleLines {
+    param([string]$ExamplePath)
+
+    $ExpectedFile = Join-Path $ExamplePath "expected_output.txt"
+    if (-not (Test-Path $ExpectedFile)) {
+        return @()
+    }
+
+    return @(Get-Content $ExpectedFile |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -ne "" -and -not $_.StartsWith("#") })
+}
+
 function Get-HomebrewGamePath {
     param([string]$BaseDir)
 
@@ -322,6 +392,7 @@ Write-Info "Rules file: $RulesFile"
 
 $FailedExamples = @()
 $SkippedExamples = @()
+$ConsoleLoggingState = Enable-CemuConsoleLogging -BaseDir $CemuDir
 
 foreach ($ExampleDir in $ExamplesToRun) {
     $ExampleName = Split-Path $ExampleDir -Leaf
@@ -417,12 +488,43 @@ foreach ($ExampleDir in $ExamplesToRun) {
             throw "Cemu launched the title, but the generated PatchCompiler graphic pack was not applied."
         }
 
+        $ExpectedLines = Get-ExpectedConsoleLines -ExamplePath $ExampleDir
+        if ($ExpectedLines.Count -gt 0) {
+            $LogText = $LogLines -join "`n"
+            $MissingLines = @($ExpectedLines | Where-Object { -not $LogText.Contains($_) })
+            if ($MissingLines.Count -gt 0) {
+                Write-Failure "Cemu log is missing expected console output:"
+                foreach ($MissingLine in $MissingLines) {
+                    Write-Host "  $MissingLine" -ForegroundColor Red
+                }
+
+                $ConsoleLines = @($LogLines | Where-Object { $_ -match "\[OSConsole\]" })
+                if ($ConsoleLines.Count -eq 0) {
+                    Write-Info "The title did not write any console output. Enable Coreinit Logging in Cemu if this is unexpected."
+                } else {
+                    Write-Info "Console output that was produced:"
+                    foreach ($ConsoleLine in ($ConsoleLines | Select-Object -First 25)) {
+                        Write-Host "  $ConsoleLine" -ForegroundColor Gray
+                    }
+                    if ($ConsoleLines.Count -gt 25) {
+                        Write-Host "  ... and $($ConsoleLines.Count - 25) more line(s)" -ForegroundColor Gray
+                    }
+                }
+
+                throw "Expected console output was not produced."
+            }
+
+            Write-Info "Console output matched $($ExpectedLines.Count) expected line(s)."
+        }
+
         Write-Success "Example '$ExampleName' verified successfully!"
     } catch {
         Write-Failure "Example '$ExampleName' FAILED: $_"
         $FailedExamples += $ExampleName
     }
 }
+
+Restore-CemuSettings -State $ConsoleLoggingState
 
 if ($FailedExamples.Count -gt 0) {
     Write-Failure "Some examples failed verification: $($FailedExamples -join ', ')"
