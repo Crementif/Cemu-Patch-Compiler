@@ -104,8 +104,10 @@ std::string assembleInstructionToBytes(std::string_view instruction)
 	std::error_code ec;
 
 	// Write instruction to temp_assemble.cpp as global inline assembly
-	std::string tempCppPath = "temp_assemble.cpp";
-	std::string tempOPath = "temp_assemble.o";
+	static uint64_t s_tempCounter = 0;
+	uint64_t tempId = s_tempCounter++;
+	std::string tempCppPath = std::format("temp_assemble_{}.cpp", tempId);
+	std::string tempOPath = std::format("temp_assemble_{}.o", tempId);
 	{
 		std::ofstream out(tempCppPath, std::ios::binary);
 		if (!out)

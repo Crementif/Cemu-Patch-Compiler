@@ -171,10 +171,17 @@ std::string AsmUpdater_fixInstruction(std::string_view instructionText)
 		if (isForbiddenInstruction(di.name.c_str()))
 		{
 			std::string hexVal = assembleInstructionToBytes(instructionText);
-			if (!hexVal.empty())
+			if (hexVal.empty())
 			{
-				return std::format("\t.int {} ; {}", hexVal, trimWhitespaces(instructionText));
+				hexVal = assembleInstructionToBytes(instructionText);
 			}
+			if (hexVal.empty())
+			{
+				printf("Error: Could not encode '%s' as a raw word. It is listed as unsupported by the target assembler, so emitting the mnemonic would produce a patch file that fails to load.\n", std::string(trimWhitespaces(instructionText)).c_str());
+				fflush(stdout);
+				exit(1);
+			}
+			return std::format("\t.int {} ; {}", hexVal, trimWhitespaces(instructionText));
 		}
 
 		if (di.name == "LA")
