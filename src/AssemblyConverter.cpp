@@ -339,20 +339,19 @@ void AssemblyConverter::convertClangToCemu(
         }
       }
       if (zeroSize > 0) {
-        uint32_t numInts = zeroSize / 4;
-        uint32_t remainder = zeroSize % 4;
+        uint32_t numInts = zeroSize >= 64 ? zeroSize / 4 : 0;
+        uint32_t remainder = zeroSize - numInts * 4;
         if (numInts > 0) {
           std::string line = std::format("\t.int {}", fillVal);
           for (uint32_t i = 1; i < numInts; i++)
             line.append(std::format(",{}", fillVal));
           outputTextFile.lines.emplace_back(std::move(line));
         }
-        if (remainder >= 2) {
-          outputTextFile.lines.emplace_back(std::format("\t.short {}", fillVal));
-          remainder -= 2;
-        }
-        if (remainder == 1) {
-          outputTextFile.lines.emplace_back(std::format("\t.byte {}", fillVal));
+        if (remainder > 0) {
+          std::string line = std::format("\t.byte {}", fillVal & 0xFF);
+          for (uint32_t i = 1; i < remainder; i++)
+            line.append(std::format(",{}", fillVal & 0xFF));
+          outputTextFile.lines.emplace_back(std::move(line));
         }
       }
       continue;
