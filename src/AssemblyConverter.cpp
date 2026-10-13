@@ -118,6 +118,53 @@ std::unique_ptr<TextFile> compileCppWithEmbeddedClang(
   return parseAssemblyFromMemory(std::string_view(byteVector.data(), byteVector.size()));
 }
 
+static void decodeGasStringLiterals(std::string_view sv, std::vector<uint8_t>& out) {
+  size_t i = 0;
+  while (i < sv.size()) {
+    if (sv[i] != '"') {
+      i++;
+      continue;
+    }
+    i++;
+    while (i < sv.size() && sv[i] != '"') {
+      char c = sv[i++];
+      if (c != '\\' || i >= sv.size()) {
+        out.push_back((uint8_t)c);
+        continue;
+      }
+      char e = sv[i++];
+      switch (e) {
+      case 'n': out.push_back('\n'); break;
+      case 't': out.push_back('\t'); break;
+      case 'r': out.push_back('\r'); break;
+      case 'b': out.push_back('\b'); break;
+      case 'f': out.push_back('\f'); break;
+      case 'v': out.push_back('\v'); break;
+      case 'a': out.push_back('\a'); break;
+      case 'x': {
+        uint32_t v = 0;
+        while (i < sv.size() && isxdigit((unsigned char)sv[i])) {
+          char h = sv[i++];
+          v = v * 16 + (isdigit((unsigned char)h) ? h - '0' : (tolower(h) - 'a' + 10));
+        }
+        out.push_back((uint8_t)v);
+        break;
+      }
+      default:
+        if (e >= '0' && e <= '7') {
+          uint32_t v = e - '0';
+          for (int n = 0; n < 2 && i < sv.size() && sv[i] >= '0' && sv[i] <= '7'; n++)
+            v = v * 8 + (sv[i++] - '0');
+          out.push_back((uint8_t)v);
+        } else {
+          out.push_back((uint8_t)e);
+        }
+      }
+    }
+    i++;
+  }
+}
+
 bool AssemblyConverter::prepareCppForLinking(std::string_view sourceFilePath,
                                              std::string_view moduleName,
                                              std::string_view sourceContents) {
@@ -172,6 +219,8 @@ void AssemblyConverter::convertClangToCemu(
   fflush(stdout);
 
   bool discardingDefinition = false;
+  std::set<size_t> stringDataLines;
+  size_t firstOutputLine = outputTextFile.lines.size();
   for (auto inputLine : inputFile.lines) {
     // Skip Clang-generated inline assembly markers to keep output clean
     {
@@ -257,30 +306,24 @@ void AssemblyConverter::convertClangToCemu(
                               commonAlignVal);
       continue;
     }
-    if (parser.matchWordI(".ascii")) {
+    bool isAscii = parser.matchWordI(".ascii");
+    bool isString = !isAscii && (parser.matchWordI(".string") || parser.matchWordI(".asciz"));
+    if (isAscii || isString) {
       parser.skipWhitespaces();
-      std::string_view sv = parser.getView();
-      if (!sv.empty() && sv.front() == '"') {
-        sv.remove_prefix(1);
-        size_t endQuote = sv.rfind('"');
-        if (endQuote != std::string_view::npos)
-          sv = sv.substr(0, endQuote);
-        if (!sv.empty()) {
-          std::string line = ".byte ";
-          for (size_t i = 0; i < sv.size(); i++) {
-            if (i > 0)
-              line.append(",");
-            line.append(std::to_string((unsigned char)sv[i]));
-          }
-          outputTextFile.lines.emplace_back(std::move(line));
+      std::vector<uint8_t> bytes;
+      decodeGasStringLiterals(parser.getView(), bytes);
+      if (isString)
+        bytes.push_back(0);
+      for (size_t off = 0; off < bytes.size(); off += 64) {
+        std::string line = "\t.byte ";
+        for (size_t i = off; i < bytes.size() && i < off + 64; i++) {
+          if (i > off)
+            line.append(",");
+          line.append(std::to_string(bytes[i]));
         }
+        stringDataLines.insert(outputTextFile.lines.size());
+        outputTextFile.lines.emplace_back(std::move(line));
       }
-      continue;
-    }
-    if (parser.matchWordI(".string")) {
-      // append an extra .align 4 after the string
-      outputTextFile.lines.emplace_back(inputLine);
-      outputTextFile.lines.emplace_back("\t.align 4");
       continue;
     }
     if (parser.matchWordI(".zero") || parser.matchWordI(".space")) {
@@ -335,6 +378,17 @@ void AssemblyConverter::convertClangToCemu(
     inputLine = AsmUpdater_fixInstruction(inputLine);
 
     outputTextFile.lines.emplace_back(inputLine);
+  }
+
+  if (!stringDataLines.empty()) {
+    std::vector<std::string> aligned;
+    aligned.reserve(outputTextFile.lines.size() + stringDataLines.size());
+    for (size_t i = 0; i < outputTextFile.lines.size(); i++) {
+      aligned.emplace_back(std::move(outputTextFile.lines[i]));
+      if (i >= firstOutputLine && stringDataLines.count(i) && !stringDataLines.count(i + 1))
+        aligned.emplace_back("\t.align 4");
+    }
+    outputTextFile.lines = std::move(aligned);
   }
 }
 
