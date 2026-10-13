@@ -19,7 +19,25 @@ static std::set<std::string> g_hardcodedInstructions = {
 	"BCLR",
 	"BCCTR",
 	"FRSQRTE",
-	"FABS"
+	"FABS",
+	"ADDC",
+	"ADDC.",
+	"ADDE",
+	"ADDE.",
+	"ADDZE",
+	"ADDZE.",
+	"ADDME",
+	"ADDME.",
+	"SUBC",
+	"SUBC.",
+	"SUBFZE",
+	"SUBFZE.",
+	"SUBFME",
+	"SUBFME.",
+	"NAND",
+	"NAND.",
+	"EQV",
+	"EQV."
 };
 
 void addHardcodedInstruction(std::string_view name)

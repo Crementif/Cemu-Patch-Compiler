@@ -377,6 +377,14 @@ void AssemblyConverter::convertClangToCemu(
     // passed through one of the directive/parser paths are normalized as well.
     inputLine = AsmUpdater_fixInstruction(inputLine);
 
+    for (size_t i = 1; i < inputLine.size(); i++) {
+      char prev = inputLine[i - 1];
+      if (inputLine[i] == '$' && (std::isalnum(static_cast<unsigned char>(prev)) || prev == '_')) {
+        inputLine.replace(i, 1, "_S_");
+        i += 2;
+      }
+    }
+
     outputTextFile.lines.emplace_back(inputLine);
   }
 
