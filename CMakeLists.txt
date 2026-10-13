@@ -1,15 +1,25 @@
 cmake_minimum_required(VERSION 3.22)
+
+# llvm comes from the vcpkg submodule, built with a release only triplet and an overlay port that skips the llvm tools
+set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
+set(VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/vcpkg_overlay_ports")
+set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/vcpkg_overlay_triplets")
+set(VCPKG_TARGET_TRIPLET "x64-windows-static-release" CACHE STRING "")
+set(VCPKG_HOST_TRIPLET "x64-windows-static-release" CACHE STRING "")
+set(VCPKG_INSTALL_OPTIONS "--clean-after-build" CACHE STRING "")
+
 project(CemuPatchCompiler CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Force MSVC to link statically with the runtime
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-
 # Find LLVM and Clang packages
 find_package(Clang CONFIG REQUIRED)
 find_package(LLVM CONFIG REQUIRED)
+
+# Force MSVC to link statically with the runtime
+# llvm is release only, so debug builds use the release runtime too. LLVMConfig.cmake sets this as well, so it has to come after find_package
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
 # Source files
 set(SOURCES

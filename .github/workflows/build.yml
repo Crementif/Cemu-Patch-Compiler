@@ -12,44 +12,26 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
 
-      - name: Download Precompiled LLVM
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release download dependencies-v1 --repo ${{ github.repository }} --pattern "llvm-release-libs.tar.xz"
+      - name: Get vcpkg commit
+        id: vcpkg
+        shell: bash
+        run: echo "commit=$(git -C dependencies/vcpkg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Extract LLVM
-        run: |
-          mkdir llvm-precompiled
-          tar -xf llvm-release-libs.tar.xz -C llvm-precompiled
-
-      - name: Patch LLVM CMake Exports
-        shell: pwsh
-        run: |
-          Get-ChildItem -Path llvm-precompiled -Filter *.cmake -Recurse | ForEach-Object {
-            (Get-Content $_.FullName) -replace 'FATAL_ERROR', 'STATUS' | Set-Content $_.FullName
-          }
-
-      - name: Create Visual Studio Directory Junction
-        shell: pwsh
-        run: |
-          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          Write-Host "Detected Visual Studio at: $vsPath"
-          $targetPath = "C:\Program Files\Microsoft Visual Studio\18\Community"
-          if (-not (Test-Path $targetPath)) {
-            $parentDir = Split-Path -Path $targetPath -Parent
-            if (-not (Test-Path $parentDir)) {
-              New-Item -ItemType Directory -Path $parentDir -Force
-            }
-            New-Item -ItemType Junction -Path $targetPath -Value $vsPath -Force
-            Write-Host "Created junction from $targetPath to $vsPath"
-          }
+      # vcpkg reuses the cached llvm package as long as its ABI hash still matches
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg-cache
+          key: vcpkg-${{ steps.vcpkg.outputs.commit }}-${{ hashFiles('vcpkg.json', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_triplets/**') }}
+          restore-keys: vcpkg-${{ steps.vcpkg.outputs.commit }}-
 
       - name: Configure CMake
-        run: >
-          cmake -B build -S . 
-          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/llvm-precompiled"
+        env:
+          VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg-cache,readwrite
+        run: cmake -B build -S .
 
       - name: Build with CMake
         run: cmake --build build --config Release

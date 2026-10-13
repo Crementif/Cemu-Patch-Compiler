@@ -80,6 +80,9 @@ Originally this was intended to only translate individual functions but over tim
 
 ## Building & Testing
 
+Clone with `--recursive`, or run `git submodule update --init`.
+The first configure builds LLVM from the vcpkg submodule, which takes a while.
+
 ```cmd
 build.bat                  # Build executable (Release)
 powershell .\test_compile_examples.ps1   # Run integration tests
