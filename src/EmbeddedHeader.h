@@ -58,7 +58,7 @@ static CEMU_PATCH_ALWAYS_INLINE double cemu_patch_rsqrt_estimate(double x) {
 }
 
 // Fast approximate square root. This deliberately performs no refinement.
-static CEMU_PATCH_ALWAYS_INLINE float cemu_patch_fast_sqrtf(float x) {
+CEMU_PATCH_ALWAYS_INLINE float cemu_patch_fast_sqrtf(float x) {
     if (x == 0.0f || x != x)
         return x;
     if (x < 0.0f)
@@ -68,7 +68,7 @@ static CEMU_PATCH_ALWAYS_INLINE float cemu_patch_fast_sqrtf(float x) {
     return (float)((double)x * cemu_patch_rsqrt_estimate((double)x));
 }
 
-static CEMU_PATCH_ALWAYS_INLINE double cemu_patch_fast_sqrt(double x) {
+CEMU_PATCH_ALWAYS_INLINE double cemu_patch_fast_sqrt(double x) {
     if (x == 0.0 || x != x)
         return x;
     if (x < 0.0)
@@ -286,9 +286,10 @@ CEMU_PATCH_ALWAYS_INLINE float tanf(float x) {
 }
 #endif
 
-// Explicit builtins select the fast estimate or the matching local helper.
-#define __builtin_sqrtf(value) cemu_patch_fast_sqrtf(value)
-#define __builtin_sqrt(value) cemu_patch_fast_sqrt(value)
+// Explicit builtins select the matching local helper, since the 750 has no fsqrt and no math library to call.
+// cemu_patch_fast_sqrtf and cemu_patch_fast_sqrt give the unrefined estimate instead.
+#define __builtin_sqrtf(value) sqrtf(value)
+#define __builtin_sqrt(value) sqrt(value)
 #define __builtin_fabsf(value) fabsf(value)
 #define __builtin_copysignf(magnitude, sign) copysignf(magnitude, sign)
 #define __builtin_fminf(x, y) fminf(x, y)

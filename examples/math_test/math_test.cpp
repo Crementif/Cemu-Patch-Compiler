@@ -22,8 +22,10 @@ ATTR_KEEP volatile unsigned int gMathTestFailures = 0;
 
 ATTR_KEEP float patchMathSqrtf(float x) { return sqrtf(x); }
 ATTR_KEEP float patchMathBuiltinSqrtf(float x) { return __builtin_sqrtf(x); }
+ATTR_KEEP float patchMathFastSqrtf(float x) { return cemu_patch_fast_sqrtf(x); }
 ATTR_KEEP double patchMathSqrt(double x) { return sqrt(x); }
 ATTR_KEEP double patchMathBuiltinSqrt(double x) { return __builtin_sqrt(x); }
+ATTR_KEEP double patchMathFastSqrt(double x) { return cemu_patch_fast_sqrt(x); }
 ATTR_KEEP float patchMathSinf(float x) { return sinf(x); }
 ATTR_KEEP float patchMathCosf(float x) { return cosf(x); }
 ATTR_KEEP float patchMathTanf(float x) { return tanf(x); }
@@ -77,8 +79,9 @@ ATTR_KEEP unsigned int patchMathSelfTest() {
     if (accurateSqrt.u != 0x3fb504f3u)
         failures |= 1u << 0;
 
-    const float fastSqrt = __builtin_sqrtf(2.0f);
-    if (fabsf(fastSqrt - 0x1.6a09e6p+0f) > 0.05f)
+    const float fastSqrt = cemu_patch_fast_sqrtf(2.0f);
+    MathFloatBits builtinSqrt = {__builtin_sqrtf(2.0f)};
+    if (fabsf(fastSqrt - 0x1.6a09e6p+0f) > 0.05f || builtinSqrt.u != 0x3fb504f3u)
         failures |= 1u << 1;
 
     const double accurateDoubleSqrt = sqrt(9.0);

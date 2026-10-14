@@ -41,9 +41,23 @@ set(SOURCES
     src/StringParser.h
 )
 
+include(cmake/EmbedFiles.cmake)
+set(embeddedFiles)
+# clang's freestanding C headers
+embed_collect(embeddedFiles include "${LLVM_TOOLS_BINARY_DIR}/lib/clang/${LLVM_VERSION_MAJOR}/include"
+    FILES __stddef_*.h __stdarg_*.h float.h iso646.h limits.h stdalign.h stdarg.h stdbool.h stddef.h stdint.h
+          stdnoreturn.h)
+# libc++ with its configuration for patches, the C library headers it builds on and the runtime sources
+embed_collect(embeddedFiles include/c++/v1 "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/libcxx/include" RECURSE FILES *)
+embed_collect(embeddedFiles include/c++/v1 "${CMAKE_CURRENT_SOURCE_DIR}/runtime/libcxx" FILES *)
+embed_collect(embeddedFiles libc "${CMAKE_CURRENT_SOURCE_DIR}/runtime/libc" FILES *.h)
+embed_collect(embeddedFiles runtime "${CMAKE_CURRENT_SOURCE_DIR}/runtime/src" FILES *.cpp)
+embed_write("${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedFiles.h" "${embeddedFiles}")
+
 # Header search paths
 include_directories(
     src
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
     ${LLVM_INCLUDE_DIRS}
     ${CLANG_INCLUDE_DIRS}
 )

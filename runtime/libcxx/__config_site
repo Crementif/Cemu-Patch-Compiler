@@ -1,0 +1,25 @@
+// libc++ configuration for Cemu patches: one thread per call, no locale, wide characters, filesystem or clocks,
+// and no compiled libc++ library. Everything libc++ normally keeps in its library is either header only
+// (_LIBCPP_DISABLE_EXTERN_TEMPLATE) or provided by the patch runtime (operator new and delete, verbose abort).
+
+#ifndef _LIBCPP___CONFIG_SITE
+#define _LIBCPP___CONFIG_SITE
+
+#define _LIBCPP_ABI_VERSION 1
+#define _LIBCPP_ABI_NAMESPACE __1
+#define _LIBCPP_HAS_NO_THREADS
+#define _LIBCPP_HAS_NO_MONOTONIC_CLOCK
+#define _LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS
+#define _LIBCPP_HAS_NO_FILESYSTEM
+#define _LIBCPP_HAS_NO_RANDOM_DEVICE
+#define _LIBCPP_HAS_NO_LOCALIZATION
+#define _LIBCPP_HAS_NO_WIDE_CHARACTERS
+#define _LIBCPP_HAS_NO_STD_MODULES
+#define _LIBCPP_HAS_NO_TIME_ZONE_DATABASE
+#define _LIBCPP_PSTL_CPU_BACKEND_SERIAL
+#define _LIBCPP_HARDENING_MODE_DEFAULT _LIBCPP_HARDENING_MODE_NONE
+
+// Instantiate std::string and friends in the patch instead of expecting them in a compiled libc++
+#define _LIBCPP_DISABLE_EXTERN_TEMPLATE
+
+#endif // _LIBCPP___CONFIG_SITE

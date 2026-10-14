@@ -22,6 +22,8 @@ $RequiredSymbols = @(
     "patchMathBuiltinSqrtf",
     "patchMathSqrt",
     "patchMathBuiltinSqrt",
+    "patchMathFastSqrtf",
+    "patchMathFastSqrt",
     "patchMathSinf",
     "patchMathCosf",
     "patchMathTanf",

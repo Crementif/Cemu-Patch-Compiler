@@ -71,8 +71,9 @@ You can find the list of hardcoded instructions in [InstructionAssembler.cpp](/s
 ## Limitations
 
 Originally this was intended to only translate individual functions but over time it got expanded to handle larger projects. But there are still some limitations:
-- There is no runtime / standard library. You have to bootstrap everything yourself, including `new` and `delete`
-- The compiler provides self-contained float math helpers: `sqrtf`, `sinf`, `cosf`, `tanf`, `fabsf`, `copysignf`, `fminf`, `fmaxf`, `truncf`, `floorf`, `ceilf`, and `roundf`, plus double-precision `sqrt`. Normal `sqrtf` and `sqrt` refine the PowerPC reciprocal-square-root estimate for accuracy; explicit `__builtin_sqrtf` and `__builtin_sqrt` calls use the fast, unrefined estimate. The trigonometric helpers support finite inputs with magnitudes up to approximately `4.22e8`; larger inputs return NaN because accurate range reduction beyond that would require a full math runtime.
+- No exceptions, RTTI, threads, iostreams, files or locales. Where libc++ would throw, the game stops with `OSFatal`.
+- `new` and `delete` use the game's default heap. Define `cemu_patch_alloc` and `cemu_patch_free` to use another one.
+- `sinf`, `cosf` and `tanf` return NaN for inputs beyond about `4.22e8`.
 - Static destructors never run.
 - The VTable format is different. This is not an issue as long as your code is self-contained. But if you replace classes in a game then you have to model the game's VTables as structs with pointers and offset fields
 - Sources are compiled as C++20, also `.c` files.

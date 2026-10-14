@@ -1,0 +1,5 @@
+# Console output that the title must produce while the patch is applied.
+# patchContainersSelfTest() runs from the entry callback and only reports PASS when
+# every container, string and allocator check returned the expected result.
+[PatchCompiler Containers Test] START
+[PatchCompiler Containers Test] PASS

@@ -1,4 +1,5 @@
 #include "ModuleLinker.h"
+#include "EmbeddedFiles.h"
 #include "EmbeddedHeader.h"
 
 #include "clang/Basic/DiagnosticOptions.h"
@@ -13,6 +14,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
@@ -23,6 +25,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/IPO/GlobalDCE.h"
@@ -44,11 +47,91 @@ static void initializeLlvmOnce() {
   initialized = true;
 }
 
+// The embedded files (clang's freestanding C headers, libc++, the C library headers and the runtime sources) are
+// served from memory under this directory
+static constexpr std::string_view kResourceDir = "C:/__cemu_patch_resource";
+static const std::string kLibcxxIncludeDir = std::format("{}/include/c++/v1", kResourceDir);
+static const std::string kLibcIncludeDir = std::format("{}/libc", kResourceDir);
+static const std::string kClangIncludeDir = std::format("{}/include", kResourceDir);
+
+struct EmbeddedFile {
+  std::string path;
+  std::string contents;
+};
+
+// The generated table splits files into chunks, joined here once
+static const std::vector<EmbeddedFile> &getEmbeddedFiles() {
+  static const std::vector<EmbeddedFile> files = [] {
+    std::vector<EmbeddedFile> joined;
+    for (const auto &[path, chunk] : kEmbeddedFiles) {
+      if (joined.empty() || joined.back().path != path)
+        joined.push_back({std::string(path), {}});
+      joined.back().contents.append(chunk);
+    }
+    return joined;
+  }();
+  return files;
+}
+
+static llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> createFileSystem() {
+  auto memoryFileSystem = llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  for (const auto &file : getEmbeddedFiles()) {
+    std::string path = std::format("{}/{}", kResourceDir, file.path);
+    memoryFileSystem->addFile(path, 0, llvm::MemoryBuffer::getMemBuffer(file.contents, path));
+  }
+  auto fileSystem = llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(llvm::vfs::getRealFileSystem());
+  fileSystem->pushOverlay(memoryFileSystem);
+  return fileSystem;
+}
+
+// A source of the patch runtime: the C library functions, operator new and delete and the parts of libc++ that
+// live in its compiled library. It is compiled and linked only when the patch references one of the symbols its
+// "// provides:" lines list. A trailing * matches any symbol with that prefix.
+struct RuntimeUnit {
+  std::string name;
+  std::string_view source;
+  std::vector<std::string> provides;
+
+  bool providesSymbol(llvm::StringRef symbol) const {
+    for (const auto &pattern : provides) {
+      if (pattern.ends_with('*') ? symbol.starts_with(std::string_view(pattern).substr(0, pattern.size() - 1))
+                                 : symbol == pattern)
+        return true;
+    }
+    return false;
+  }
+};
+
+static const std::vector<RuntimeUnit> &getRuntimeUnits() {
+  static const std::vector<RuntimeUnit> units = [] {
+    std::vector<RuntimeUnit> result;
+    for (const auto &file : getEmbeddedFiles()) {
+      if (!file.path.starts_with("runtime/"))
+        continue;
+      RuntimeUnit unit{file.path.substr(8), file.contents, {}};
+      std::istringstream lines(file.contents);
+      for (std::string line; std::getline(lines, line);) {
+        if (!line.starts_with("// provides:"))
+          continue;
+        std::istringstream symbols(line.substr(12));
+        for (std::string symbol; symbols >> symbol;)
+          unit.provides.push_back(symbol);
+      }
+      result.push_back(std::move(unit));
+    }
+    return result;
+  }();
+  return units;
+}
+
 static std::unique_ptr<llvm::Module> compileToModule(llvm::LLVMContext &context,
                                                      const SourceUnit &source,
-                                                     const CompileOptions &options) {
-  printf("Compiling %s...\n", source.path.filename().string().c_str());
-  fflush(stdout);
+                                                     const CompileOptions &options,
+                                                     bool isRuntime = false) {
+  if (!isRuntime) {
+    printf("Compiling %s...\n", source.path.filename().string().c_str());
+    fflush(stdout);
+  }
 
   clang::CompilerInstance clang;
   clang::DiagnosticOptions *diagOpts = new clang::DiagnosticOptions();
@@ -77,24 +160,35 @@ static std::unique_ptr<llvm::Module> compileToModule(llvm::LLVMContext &context,
       "-fno-threadsafe-statics",
       "-fno-c++-static-destructors",
       "-fvisibility=default",
-      // Functions only referenced from patch directives or asm still have to reach the linker
-      "-femit-all-decls",
       "-std=c++20",
+      // libc++ wraps the C library headers, which wrap clang's freestanding headers
+      "-nostdinc",
+      "-isystem", kLibcxxIncludeDir.c_str(),
+      "-isystem", kLibcIncludeDir.c_str(),
+      "-isystem", kClangIncludeDir.c_str(),
       optFlag.c_str(),
       // Optimization happens once on the linked module
       "-Xclang", "-disable-llvm-passes",
   };
+  if (!isRuntime) {
+    // Functions only referenced from patch directives or asm still have to reach the linker
+    args.push_back("-femit-all-decls");
+  }
   if (ext == ".c" || ext == ".h") {
     args.push_back("-x");
     args.push_back("c++");
   }
-  for (const auto &arg : options.clangArgs)
-    args.push_back(arg.c_str());
+  if (!isRuntime) {
+    for (const auto &arg : options.clangArgs)
+      args.push_back(arg.c_str());
+  }
   args.push_back("-c");
   args.push_back(sourcePath.c_str());
 
+  llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> fileSystem = createFileSystem();
   clang::CreateInvocationOptions invocationOptions;
   invocationOptions.Diags = diags;
+  invocationOptions.VFS = fileSystem;
   std::shared_ptr<clang::CompilerInvocation> invocation =
       clang::createInvocation(args, invocationOptions);
   if (!invocation)
@@ -110,6 +204,7 @@ static std::unique_ptr<llvm::Module> compileToModule(llvm::LLVMContext &context,
       sourcePath, llvm::MemoryBuffer::getMemBufferCopy(source.contents, sourcePath).release());
   invocation->getPreprocessorOpts().RetainRemappedFileBuffers = true;
   clang.setInvocation(invocation);
+  clang.createFileManager(fileSystem);
 
   clang::EmitLLVMOnlyAction action(&context);
   if (!clang.ExecuteAction(action))
@@ -269,6 +364,128 @@ static void optimizeModule(llvm::Module &module, llvm::TargetMachine &targetMach
   passes.run(module, moduleAnalysis);
 }
 
+// Code generation calls these for memory intrinsics it doesn't expand inline
+static constexpr std::array<std::string_view, 3> kCodegenLibcalls = {"memmove", "memset", "memcpy"};
+
+static std::string_view getIntrinsicLibcall(const llvm::Function &function) {
+  switch (function.getIntrinsicID()) {
+  case llvm::Intrinsic::memcpy:
+    return "memcpy";
+  case llvm::Intrinsic::memmove:
+    return "memmove";
+  case llvm::Intrinsic::memset:
+    return "memset";
+  default:
+    return {};
+  }
+}
+
+// Symbols the module uses but doesn't define, including the library functions of memory intrinsics
+static std::set<std::string> collectUndefinedSymbols(llvm::Module &module) {
+  std::set<std::string> undefined;
+  for (auto &global : module.global_values()) {
+    if (!global.isDeclaration() || global.use_empty() || !global.hasName())
+      continue;
+    if (auto *function = llvm::dyn_cast<llvm::Function>(&global); function && function->isIntrinsic()) {
+      std::string_view libcall = getIntrinsicLibcall(*function);
+      if (auto *defined = libcall.empty() ? nullptr : module.getFunction(libcall); defined && !defined->isDeclaration())
+        continue;
+      if (!libcall.empty())
+        undefined.emplace(libcall);
+      continue;
+    }
+    undefined.emplace(global.getName().str());
+  }
+  return undefined;
+}
+
+static std::set<std::string> collectDefinedSymbols(llvm::Module &module) {
+  std::set<std::string> defined;
+  for (auto &global : module.global_values()) {
+    if (!global.isDeclaration() && global.hasName())
+      defined.emplace(global.getName().str());
+  }
+  return defined;
+}
+
+// Links the runtime units that define symbols the patch uses, until nothing more is needed. Returns the symbols the
+// runtime added, or nullopt if a unit failed to compile or link.
+static std::optional<std::set<std::string>> linkRuntimeUnits(llvm::LLVMContext &context, llvm::Module &linked,
+                                                             llvm::Linker &linker, const CompileOptions &options) {
+  const auto &units = getRuntimeUnits();
+  std::set<std::string> definedByPatch = collectDefinedSymbols(linked);
+  std::vector<bool> isLinked(units.size(), false);
+  for (bool linkedUnit = true; linkedUnit;) {
+    linkedUnit = false;
+    std::set<std::string> undefined = collectUndefinedSymbols(linked);
+    for (size_t i = 0; i < units.size(); i++) {
+      const RuntimeUnit &unit = units[i];
+      if (isLinked[i])
+        continue;
+      auto needed = std::find_if(undefined.begin(), undefined.end(),
+                                 [&](const std::string &symbol) { return unit.providesSymbol(symbol); });
+      if (needed == undefined.end())
+        continue;
+      printf("Compiling runtime %s for %s...\n", unit.name.c_str(), needed->c_str());
+      fflush(stdout);
+      SourceUnit source{std::format("{}/runtime/{}", kResourceDir, unit.name), std::string(unit.source)};
+      auto module = compileToModule(context, source, options, true);
+      if (!module) {
+        printf("Error: Compilation failed for runtime '%s'.\n", unit.name.c_str());
+        return std::nullopt;
+      }
+      std::set<std::string> unitDefines = collectDefinedSymbols(*module);
+      for (const auto &pattern : unit.provides) {
+        bool defined = pattern.ends_with('*')
+                           ? std::any_of(unitDefines.begin(), unitDefines.end(),
+                                         [&](const std::string &symbol) {
+                                           return symbol.starts_with(std::string_view(pattern).substr(0, pattern.size() - 1));
+                                         })
+                           : unitDefines.contains(pattern);
+        if (!defined)
+          fatalError(std::format("Runtime '{}' lists '{}' but doesn't define it", unit.name, pattern));
+      }
+      if (linker.linkInModule(std::move(module))) {
+        printf("Error: Linking runtime '%s' failed.\n", unit.name.c_str());
+        return std::nullopt;
+      }
+      isLinked[i] = true;
+      linkedUnit = true;
+    }
+  }
+
+  std::set<std::string> definedByRuntime;
+  for (const auto &symbol : collectDefinedSymbols(linked)) {
+    if (!definedByPatch.contains(symbol))
+      definedByRuntime.insert(symbol);
+  }
+  // Runtime definitions are weak so the patch can replace them. The ones that stay external are final now.
+  for (std::string_view libcall : kCodegenLibcalls) {
+    if (auto *function = linked.getFunction(libcall); function && definedByRuntime.contains(std::string(libcall)))
+      function->setLinkage(llvm::GlobalValue::ExternalLinkage);
+  }
+  return definedByRuntime;
+}
+
+// The memory functions stay external until code generation in case it calls them, but if the optimized patch
+// doesn't use them at all they are dropped
+static void removeUnusedLibcalls(llvm::Module &module, const std::set<std::string> &definedByRuntime) {
+  std::set<std::string_view> intrinsicLibcalls;
+  for (auto &function : module) {
+    if (!function.use_empty()) {
+      if (std::string_view libcall = getIntrinsicLibcall(function); !libcall.empty())
+        intrinsicLibcalls.insert(libcall);
+    }
+  }
+  // memmove calls memcpy, so it goes first
+  for (std::string_view libcall : kCodegenLibcalls) {
+    auto *function = module.getFunction(libcall);
+    if (function && definedByRuntime.contains(std::string(libcall)) && function->use_empty() &&
+        !intrinsicLibcalls.contains(libcall))
+      function->eraseFromParent();
+  }
+}
+
 std::unique_ptr<TextFile> compileAndLinkSources(const std::vector<SourceUnit> &sources,
                                                 const CompileOptions &options) {
   initializeLlvmOnce();
@@ -303,16 +520,26 @@ std::unique_ptr<TextFile> compileAndLinkSources(const std::vector<SourceUnit> &s
     return nullptr;
   printStage(std::format("Compiled and linked {} translation unit(s)", sources.size()).c_str());
 
+  auto definedByRuntime = linkRuntimeUnits(context, *linked, *linker, options);
+  if (!definedByRuntime)
+    return nullptr;
+  if (!definedByRuntime->empty())
+    printStage("Linked the runtime");
+
   bool hasConstructors = lowerGlobalConstructors(*linked);
   std::set<std::string> asmReferenced = collectAsmReferencedSymbols(*linked);
   // C++ symbols are only reachable from this patch, so they can be inlined and removed. C symbols
   // stay external: hooks, symbols named in asm, and runtime functions code generation calls.
+  // The runtime's C functions are only called from this patch, except the memory functions.
   llvm::internalizeModule(*linked, [&](const llvm::GlobalValue &global) {
     llvm::StringRef name = global.getName();
     if (hasConstructors && name == llvm::StringRef(kGlobalCtorsSymbol))
       return true;
     if (asmReferenced.contains(name.str()))
       return true;
+    if (definedByRuntime->contains(name.str()))
+      return std::find(kCodegenLibcalls.begin(), kCodegenLibcalls.end(), std::string_view(name)) !=
+             kCodegenLibcalls.end();
     return !name.starts_with("_Z");
   });
 
@@ -332,6 +559,7 @@ std::unique_ptr<TextFile> compileAndLinkSources(const std::vector<SourceUnit> &s
                                            : llvm::CodeGenOptLevel::Default));
 
   optimizeModule(*linked, *targetMachine, level);
+  removeUnusedLibcalls(*linked, *definedByRuntime);
   printStage("Optimized");
   sanitizeLocalSymbolNames(*linked);
   if (llvm::verifyModule(*linked, &llvm::errs())) {

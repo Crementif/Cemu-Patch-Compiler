@@ -1,0 +1,7 @@
+[Definition]
+titleIds = 00050000101C9300,00050000101C9400,00050000101C9500
+name = PatchCompiler Containers Test
+path = "Cemu PatchCompiler/Containers Test"
+description = Uses libc++ containers, std::string and the patch runtime from the entry callback. Logs PASS when every check succeeds.
+version = 8
+default = 1
