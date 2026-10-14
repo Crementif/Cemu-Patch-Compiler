@@ -203,9 +203,8 @@ std::optional<SourceFileInput> loadSourceFileInput(
 
 std::unique_ptr<TextFile> util_readTextFile(std::string_view path) {
   std::ifstream file(path.data(), std::ios::binary);
-  if (!file.is_open()) {
-    __debugbreak();
-  }
+  if (!file.is_open())
+    fatalError(std::format("Could not open '{}' for reading", path));
 
   auto textFile = std::make_unique<TextFile>();
   std::string line;
@@ -254,9 +253,8 @@ void util_writeFile(std::string_view path, const TextFile *textFile) {
   std::filesystem::create_directories(p.parent_path(), ec);
 
   std::ofstream file(path.data(), std::ios::binary);
-  if (!file.is_open()) {
-    __debugbreak();
-  }
+  if (!file.is_open())
+    fatalError(std::format("Could not open '{}' for writing", path));
 
   for (const auto &line : textFile->lines) {
     file.write(line.data(), line.size());
@@ -376,9 +374,8 @@ bool parseCommonSymbolDirective(std::string_view line, std::string &symbol,
 
   const char *symbolStr;
   int32_t symbolLength;
-  if (!parser.parseSymbolName(symbolStr, symbolLength)) {
-    __debugbreak();
-  }
+  if (!parser.parseSymbolName(symbolStr, symbolLength))
+    fatalError(std::format("Malformed directive '{}'", line));
   symbol.assign(symbolStr, symbolLength);
 
   parser.skipWhitespaces();
@@ -387,17 +384,15 @@ bool parseCommonSymbolDirective(std::string_view line, std::string &symbol,
   }
 
   sizeVal = 0;
-  if (!parser.parseU32(sizeVal)) {
-    __debugbreak();
-  }
+  if (!parser.parseU32(sizeVal))
+    fatalError(std::format("Malformed directive '{}'", line));
 
   alignVal = 1;
   parser.skipWhitespaces();
   if (parser.compareCharacter(0, ',')) {
     parser.skipCharacters(1);
-    if (!parser.parseU32(alignVal)) {
-      __debugbreak();
-    }
+    if (!parser.parseU32(alignVal))
+      fatalError(std::format("Malformed directive '{}'", line));
   }
 
   return true;

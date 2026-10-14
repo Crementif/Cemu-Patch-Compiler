@@ -138,11 +138,18 @@ static bool maskToMBME(uint32_t mask, int& mb, int& me)
 	return true;
 }
 
+[[noreturn]] static void failMalformedInstruction(std::string_view instructionText)
+{
+	fatalError(std::format("Malformed instruction '{}'", trimWhitespaces(instructionText)));
+}
+
 std::string AsmUpdater_fixInstruction(std::string_view instructionText)
 {
 	DissectedInstruction di;
 	if (dissectInstruction(instructionText, di))
 	{
+		if (di.name == "TRAP" && di.operandStr.empty())
+			return "\t.int 0x7FE00008";
 		// Clang uses BUN/BNU for the unordered bit produced by floating-point
 		// comparisons. Cemu's assembler accepts the canonical BC form instead.
 		if ((di.name == "BUN" || di.name == "BNU") &&
@@ -190,15 +197,11 @@ std::string AsmUpdater_fixInstruction(std::string_view instructionText)
 			// in:		la r4, 123(r4)
 			// out:		addi r4, r4, 123
 			if (di.operandStr.size() != 2)
-			{
-				__debugbreak();
-			}
+				failMalformedInstruction(instructionText);
 
 			DissectedMemOperand dim;
 			if (!dim.dissect(di.operandStr[1]))
-			{
-				__debugbreak();
-			}
+				failMalformedInstruction(instructionText);
 
 			return std::format("\taddi {}, {}, {}", di.operandStr[0], dim.memRegisterStr, dim.offsetStr);
 		}
@@ -225,9 +228,7 @@ std::string AsmUpdater_fixInstruction(std::string_view instructionText)
 		if (di.name == "BNL")
 		{
 			if (di.operandStr.size() != 2)
-			{
-				__debugbreak();
-			}
+				failMalformedInstruction(instructionText);
 			return std::format("\tbge {}, {}", di.operandStr[0], di.operandStr[1]);
 		}
 

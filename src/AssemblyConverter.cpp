@@ -220,6 +220,7 @@ void AssemblyConverter::convertClangToCemu(
 
   bool discardingDefinition = false;
   std::set<size_t> stringDataLines;
+  std::vector<std::pair<std::string, std::string>> symbolAliases;
   size_t firstOutputLine = outputTextFile.lines.size();
   for (auto inputLine : inputFile.lines) {
     // Skip Clang-generated inline assembly markers to keep output clean
@@ -240,8 +241,10 @@ void AssemblyConverter::convertClangToCemu(
 
     if (discardingDefinition) {
       auto nextDefinition = parseTopLevelSymbolDefinition(normalizedInputLine);
-      if (!nextDefinition ||
-          !m_topLevelDefinedSymbols.contains(*nextDefinition)) {
+      bool constantPool = normalizedInputLine.find("LCPI") != std::string_view::npos &&
+                          !normalizedInputLine.empty() && normalizedInputLine.back() == ':';
+      if (!constantPool && (!nextDefinition ||
+          !m_topLevelDefinedSymbols.contains(*nextDefinition))) {
         continue;
       }
       discardingDefinition = false;
@@ -284,7 +287,23 @@ void AssemblyConverter::convertClangToCemu(
         parser.matchWordI(".weak") || parser.matchWordI(".data") ||
         parser.matchWordI(".ident") || parser.matchWordI(".addrsig") ||
         parser.matchWordI(".addrsig_sym") || parser.matchWordI(".machine") ||
-        parser.matchWordI(".set") || parser.matchWordI(".local")) {
+        parser.matchWordI(".local")) {
+      continue;
+    }
+    if (parser.matchWordI(".set")) {
+      std::string rest = inputLine.substr(inputLine.find(".set") + 4);
+      size_t comma = rest.find(',');
+      if (comma != std::string::npos) {
+        auto trim = [](std::string v) {
+          size_t a = v.find_first_not_of(" \t");
+          size_t e = v.find_last_not_of(" \t");
+          return a == std::string::npos ? std::string() : v.substr(a, e - a + 1);
+        };
+        std::string alias = trim(rest.substr(0, comma));
+        std::string target = trim(rest.substr(comma + 1));
+        if (!alias.empty() && !target.empty() && (std::isalpha(static_cast<unsigned char>(target[0])) || target[0] == '_'))
+          symbolAliases.emplace_back(alias, target);
+      }
       continue;
     }
     parser = StringTokenParser(inputLine.data(), (int32_t)inputLine.size());
@@ -293,7 +312,7 @@ void AssemblyConverter::convertClangToCemu(
     if (parser.matchWordI(".p2align")) {
       uint32_t val;
       if (!parser.parseU32(val))
-        __debugbreak();
+        fatalError(std::format("Malformed directive '{}'", inputLine));
       outputTextFile.lines.emplace_back(std::format("\t.align {}", 1 << val));
       continue;
     }
@@ -329,14 +348,13 @@ void AssemblyConverter::convertClangToCemu(
     if (parser.matchWordI(".zero") || parser.matchWordI(".space")) {
       uint32_t zeroSize;
       if (!parser.parseU32(zeroSize))
-        __debugbreak();
+        fatalError(std::format("Malformed directive '{}'", inputLine));
       uint32_t fillVal = 0;
       parser.skipWhitespaces();
       if (parser.compareCharacter(0, ',')) {
         parser.skipCharacters(1);
-        if (!parser.parseU32(fillVal)) {
-          __debugbreak();
-        }
+        if (!parser.parseU32(fillVal))
+          fatalError(std::format("Malformed directive '{}'", inputLine));
       }
       if (zeroSize > 0) {
         uint32_t numInts = zeroSize >= 64 ? zeroSize / 4 : 0;
@@ -405,6 +423,16 @@ void AssemblyConverter::convertClangToCemu(
         aligned.emplace_back("\t.align 4");
     }
     outputTextFile.lines = std::move(aligned);
+  }
+
+  for (auto& [alias, target] : symbolAliases) {
+    std::string targetLabel = target + ":";
+    for (size_t i = firstOutputLine; i < outputTextFile.lines.size(); i++) {
+      if (outputTextFile.lines[i] == targetLabel) {
+        outputTextFile.lines.insert(outputTextFile.lines.begin() + i, alias + ":");
+        break;
+      }
+    }
   }
 }
 

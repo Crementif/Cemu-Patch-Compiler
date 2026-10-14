@@ -22,6 +22,12 @@
 
 namespace fs = std::filesystem;
 
+[[noreturn]] inline void fatalError(std::string_view message) {
+    printf("Error: %.*s\n", (int)message.size(), message.data());
+    fflush(stdout);
+    exit(1);
+}
+
 inline fs::path getExecutableDir() {
     char buffer[MAX_PATH];
     GetModuleFileNameA(NULL, buffer, MAX_PATH);
