@@ -18,6 +18,9 @@ private:
 
   void analyzeSymbols(const TextFile &inputFile);
 
+  bool splitIntoPatchGroups(const TextFile &body, std::string_view moduleGroupName,
+                            uint32_t moduleMatches, TextFile &output);
+
   void finalize(TextFile &outputTextFile);
 
   std::unique_ptr<TextFile> m_inputTextFile;

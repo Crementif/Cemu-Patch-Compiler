@@ -62,17 +62,135 @@ std::unique_ptr<TextFile>
 AssemblyConverter::emitPatch(std::string_view moduleGroupName, uint32_t moduleMatches) {
   cemu_assert_debug(m_inputTextFile != nullptr);
 
-  auto outputTextFile = std::make_unique<TextFile>();
-  outputTextFile->lines.emplace_back(std::format("[{}]", moduleGroupName));
-  outputTextFile->lines.emplace_back(
-      std::format("moduleMatches = 0x{:08X}", moduleMatches));
-  outputTextFile->lines.emplace_back(".origin = codecave");
-  outputTextFile->lines.emplace_back("");
-
+  TextFile body;
   m_patchDirectives.clear();
-  convertClangToCemu(*m_inputTextFile, *outputTextFile);
+  convertClangToCemu(*m_inputTextFile, body);
+
+  auto outputTextFile = std::make_unique<TextFile>();
+  if (!splitIntoPatchGroups(body, moduleGroupName, moduleMatches, *outputTextFile))
+    return nullptr;
   finalize(*outputTextFile);
   return outputTextFile;
+}
+
+static size_t countOperands(std::string_view operands) {
+  return operands.empty() ? 0 : 1 + std::count(operands.begin(), operands.end(), ',');
+}
+
+// Size in bytes Cemu's assembler gives a line placed at the given codecave offset
+static uint32_t getAssembledLineSize(std::string_view line, uint32_t offset) {
+  std::string_view text = normalizeAssemblyLine(line);
+  if (size_t comment = text.find(';'); comment != std::string_view::npos)
+    text = trimAsciiWhitespace(text.substr(0, comment));
+  if (text.empty() || text.back() == ':')
+    return 0;
+  if (text.front() != '.')
+    return 4;
+
+  size_t space = text.find_first_of(" \t");
+  std::string_view directive = text.substr(0, space);
+  std::string_view operands =
+      space == std::string_view::npos ? std::string_view() : trimAsciiWhitespace(text.substr(space));
+  if (directive == ".align") {
+    uint32_t alignment = 1;
+    std::from_chars(operands.data(), operands.data() + operands.size(), alignment);
+    return alignment > 1 ? (alignment - offset % alignment) % alignment : 0;
+  }
+  if (directive == ".byte")
+    return (uint32_t)countOperands(operands);
+  if (directive == ".short")
+    return (uint32_t)countOperands(operands) * 2;
+  if (directive == ".int" || directive == ".float")
+    return (uint32_t)countOperands(operands) * 4;
+  if (directive == ".double")
+    return (uint32_t)countOperands(operands) * 8;
+  printf("Error: Can't size the directive '%s' to place it in a code cave.\n", std::string(text).c_str());
+  return UINT32_MAX;
+}
+
+static bool isLabelLine(std::string_view line) {
+  std::string_view text = normalizeAssemblyLine(line);
+  return !text.empty() && text.back() == ':';
+}
+
+static bool isAlignOrBlankLine(std::string_view line) {
+  std::string_view text = normalizeAssemblyLine(line);
+  return text.empty() || text.starts_with(".align");
+}
+
+// Function local labels look like _<unit hash>_L...
+static bool isLocalLabel(std::string_view line) {
+  std::string_view text = normalizeAssemblyLine(line);
+  return text.size() > 19 && text[0] == '_' && text[17] == '_' && text[18] == 'L';
+}
+
+// Cemu only places offsets below 1 MB of a patch group in its code cave, and resolving a group
+// takes time quadratic in its entry count, since resolved entries are erased one by one from a
+// vector. Patches are therefore split into 128 KB groups, before a top level symbol together with
+// its alignment and alias labels. Groups resolve each other's symbols.
+bool AssemblyConverter::splitIntoPatchGroups(const TextFile &body,
+                                             std::string_view moduleGroupName,
+                                             uint32_t moduleMatches, TextFile &output) {
+  constexpr uint32_t kCodeCaveLimit = 0x100000;
+  constexpr uint32_t kGroupSize = 0x20000;
+  const auto &lines = body.lines;
+
+  std::vector<size_t> chunkStarts = {0};
+  for (size_t i = 1; i < lines.size(); i++) {
+    if (!isLabelLine(lines[i]) || isLocalLabel(lines[i]))
+      continue;
+    size_t start = i;
+    while (start > chunkStarts.back() + 1 && isAlignOrBlankLine(lines[start - 1]))
+      start--;
+    if (start > chunkStarts.back() && !isLabelLine(lines[start - 1]))
+      chunkStarts.push_back(start);
+  }
+  chunkStarts.push_back(lines.size());
+
+  int groupCount = 0;
+  uint32_t offset = 0;
+  auto beginGroup = [&] {
+    groupCount++;
+    if (groupCount > 1)
+      output.lines.emplace_back("");
+    output.lines.emplace_back(groupCount == 1
+                                  ? std::format("[{}]", moduleGroupName)
+                                  : std::format("[{}_{}]", moduleGroupName, groupCount));
+    output.lines.emplace_back(std::format("moduleMatches = 0x{:08X}", moduleMatches));
+    output.lines.emplace_back(".origin = codecave");
+    output.lines.emplace_back("");
+    offset = 0;
+  };
+  beginGroup();
+
+  for (size_t chunk = 0; chunk + 1 < chunkStarts.size(); chunk++) {
+    uint32_t chunkOffset = offset;
+    for (size_t i = chunkStarts[chunk]; i < chunkStarts[chunk + 1]; i++) {
+      uint32_t size = getAssembledLineSize(lines[i], chunkOffset);
+      if (size == UINT32_MAX)
+        return false;
+      chunkOffset += size;
+    }
+    if (chunkOffset > kGroupSize && offset > 0) {
+      beginGroup();
+      chunkOffset = 0;
+      for (size_t i = chunkStarts[chunk]; i < chunkStarts[chunk + 1]; i++)
+        chunkOffset += getAssembledLineSize(lines[i], chunkOffset);
+    }
+    if (chunkOffset > kCodeCaveLimit) {
+      printf("Error: A single symbol needs more than the 1 MB a patch group's code cave can hold.\n");
+      return false;
+    }
+    for (size_t i = chunkStarts[chunk]; i < chunkStarts[chunk + 1]; i++)
+      output.lines.emplace_back(lines[i]);
+    offset = chunkOffset;
+  }
+
+  if (groupCount > 1) {
+    printf("Split into %d patch groups.\n", groupCount);
+    fflush(stdout);
+  }
+  return true;
 }
 
 std::string AssemblyConverter::getEmittedSymbolName(std::string_view symbol) const {
