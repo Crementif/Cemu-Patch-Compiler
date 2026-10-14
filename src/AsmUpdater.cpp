@@ -174,6 +174,13 @@ std::string AsmUpdater_fixInstruction(std::string_view instructionText)
 				}
 			}
 		}
+		// without a CR field the unordered bit is cr0's, also when Clang names it "un" in the BC form
+		if ((di.name == "BUN" || di.name == "BNU") && di.operandStr.size() == 1)
+			return std::format("\tbc {}, 3, {}", di.name == "BUN" ? 12 : 4, di.operandStr[0]);
+		if ((di.name == "BC" || di.name == "BCL") && di.operandStr.size() == 3 &&
+			(di.operandStr[1] == "un" || di.operandStr[1] == "UN"))
+			return std::format("\t{} {}, 3, {}", di.name == "BC" ? "bc" : "bcl", di.operandStr[0],
+				di.operandStr[2]);
 
 		if (isForbiddenInstruction(di.name.c_str()))
 		{

@@ -375,15 +375,36 @@ void AssemblyConverter::convertClangToCemu(const TextFile &inputFile,
       }
     }
 
+    // a function that ends in a noreturn call would fall through into its constant pool, which Cemu's function
+    // boundary scan then decodes (0x4b000000 is a branch 16 MB back), so end it with an invalid instruction
+    if (inputLine.ends_with(':') && inputLine.find("Lfunc_end") != std::string::npos) {
+      for (size_t i = outputTextFile.lines.size(); i > firstOutputLine; i--) {
+        std::string_view last = normalizeAssemblyLine(outputTextFile.lines[i - 1]);
+        if (last.empty() || last.back() == ':')
+          continue;
+        if (last.starts_with("bl ") || last.starts_with("bl\t") || last.starts_with("bla ") || last.starts_with("bla\t"))
+          outputTextFile.lines.emplace_back("\t.int 0");
+        break;
+      }
+    }
     outputTextFile.lines.emplace_back(inputLine);
   }
 
   if (!stringDataLines.empty()) {
+    // a string followed by more data is part of one object (e.g. llvm's merged string pool, addressed as pool+offset),
+    // so padding there would shift everything after it
+    auto isDataLine = [&](size_t i) {
+      if (i >= outputTextFile.lines.size())
+        return false;
+      std::string_view next = normalizeAssemblyLine(outputTextFile.lines[i]);
+      return next.starts_with(".byte") || next.starts_with(".short") || next.starts_with(".int") ||
+             next.starts_with(".long") || next.starts_with(".float") || next.starts_with(".double");
+    };
     std::vector<std::string> aligned;
     aligned.reserve(outputTextFile.lines.size() + stringDataLines.size());
     for (size_t i = 0; i < outputTextFile.lines.size(); i++) {
       aligned.emplace_back(std::move(outputTextFile.lines[i]));
-      if (i >= firstOutputLine && stringDataLines.count(i) && !stringDataLines.count(i + 1))
+      if (i >= firstOutputLine && stringDataLines.count(i) && !isDataLine(i + 1))
         aligned.emplace_back("\t.align 4");
     }
     outputTextFile.lines = std::move(aligned);

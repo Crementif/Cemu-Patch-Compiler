@@ -312,6 +312,16 @@ std::string rewritePrivateSymbols(
 
   size_t index = 0;
   while (index < line.size()) {
+    // string data like .asciz "free" isn't a symbol reference
+    if (line[index] == '"') {
+      size_t stringEnd = index + 1;
+      while (stringEnd < line.size() && line[stringEnd] != '"')
+        stringEnd += line[stringEnd] == '\\' ? 2 : 1;
+      stringEnd = std::min(stringEnd + 1, line.size());
+      result.append(line.substr(index, stringEnd - index));
+      index = stringEnd;
+      continue;
+    }
     if (!isAssemblySymbolChar(line[index])) {
       result.push_back(line[index]);
       index++;

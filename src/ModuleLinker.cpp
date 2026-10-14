@@ -225,9 +225,14 @@ static bool isSymbolChar(char c) {
   return isSymbolStart(c) || std::isdigit(static_cast<unsigned char>(c));
 }
 
+// The identifiers of asm text, except the first of each statement, which is a mnemonic like the fabs of the implicit
+// header's fabsf rather than the runtime's fabs
 static void collectAsmIdentifiers(llvm::StringRef text, std::set<std::string> &out) {
   size_t i = 0;
+  bool statementStart = true;
   while (i < text.size()) {
+    if (text[i] == '\n' || text[i] == ';')
+      statementStart = true;
     if (!isSymbolStart(text[i])) {
       i++;
       continue;
@@ -235,7 +240,9 @@ static void collectAsmIdentifiers(llvm::StringRef text, std::set<std::string> &o
     size_t start = i;
     while (i < text.size() && isSymbolChar(text[i]))
       i++;
-    out.emplace(text.substr(start, i - start).str());
+    if (!statementStart)
+      out.emplace(text.substr(start, i - start).str());
+    statementStart = false;
   }
 }
 
