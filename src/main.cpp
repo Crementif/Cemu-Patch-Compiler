@@ -76,6 +76,15 @@ static void loadHardcodedInstructionsFromConfig(const Config &config) {
   }
 }
 
+static void loadCompileOptionsFromConfig(const Config &config, CompileOptions &options) {
+  std::string optimization = config.get("Settings", "optimization");
+  if (!optimization.empty())
+    options.optLevel = optimization;
+  std::istringstream clangArgs(config.get("Settings", "clangArgs"));
+  for (std::string arg; clangArgs >> arg;)
+    options.clangArgs.push_back(arg);
+}
+
 static void printHelp(const char *execName) {
   printf("Cemu Patch Compiler - Compiles C/C++ sources into Cemu PPC assembly patches\n\n");
   printf("Usage:\n");
@@ -85,7 +94,10 @@ static void printHelp(const char *execName) {
   printf("  -v, --version              Show version information.\n");
   printf("  -o, --output <file|dir>    Specify output patch file or directory.\n");
   printf("  -c, --checksum <hex>       Override target module checksum (e.g. 0x6267BFD0).\n");
-  printf("  -i, --hardcode-instructions <list> Extend instructions to hardcode as .int (stop-gap for Cemu's assembler, e.g. -i SUBF,MULLW).\n\n");
+  printf("  -i, --hardcode-instructions <list> Extend instructions to hardcode as .int (stop-gap for Cemu's assembler, e.g. -i SUBF,MULLW).\n");
+  printf("  -O0, -O1, -O2, -O3, -Os, -Oz  Optimization level of the linked patch (default -Os).\n");
+  printf("  -D<macro>[=value], -I<dir>  Define a macro or add an include directory.\n");
+  printf("  -X, --clang-arg <arg>      Pass an argument to clang (e.g. -X -std=c++23).\n\n");
   printf("Execution Modes:\n");
   printf("  1. Drag & Drop:            Drop a source folder or file onto executable.\n");
   printf("  2. Portable Scanning:      Scans src/ or source/ subfolders in working directory.\n");
@@ -122,6 +134,8 @@ int main(int argc, char *argv[]) {
   std::filesystem::path outputTarget = "";
   bool explicitOutputTarget = false;
   std::optional<uint32_t> cliChecksum = std::nullopt;
+  CompileOptions options;
+  loadCompileOptionsFromConfig(config, options);
 
   std::vector<std::string> positionalArgs;
   for (int i = 1; i < argc; ++i) {
@@ -168,6 +182,25 @@ int main(int argc, char *argv[]) {
         printf("Error: Missing argument for %s\n", arg.c_str());
         return 1;
       }
+    } else if (arg.size() == 3 && arg.starts_with("-O") &&
+               std::string_view("0123sz").find(arg[2]) != std::string_view::npos) {
+      options.optLevel = arg.substr(2);
+    } else if (arg == "-X" || arg == "--clang-arg") {
+      if (i + 1 < argc) {
+        options.clangArgs.push_back(argv[++i]);
+      } else {
+        printf("Error: Missing argument for %s\n", arg.c_str());
+        return 1;
+      }
+    } else if (arg.starts_with("-D") || arg.starts_with("-I")) {
+      options.clangArgs.push_back(arg);
+      if (arg.size() == 2) {
+        if (i + 1 >= argc) {
+          printf("Error: Missing argument for %s\n", arg.c_str());
+          return 1;
+        }
+        options.clangArgs.push_back(argv[++i]);
+      }
     } else if (arg.starts_with("-")) {
       printf("Error: Unknown flag '%s'. Run with --help for usage.\n", arg.c_str());
       return 1;
@@ -191,7 +224,7 @@ int main(int argc, char *argv[]) {
       explicitOutputTarget = true;
     }
     printf("Input Path:       %s\n", inputPath.generic_string().c_str());
-    bool success = compileSingleTarget(inputPath, outputTarget, cliChecksum, explicitOutputTarget);
+    bool success = compileSingleTarget(inputPath, outputTarget, cliChecksum, explicitOutputTarget, options);
     if (!success) return 1;
     printf("done\n");
     return 0;
@@ -222,7 +255,7 @@ int main(int argc, char *argv[]) {
 
   if (!inputPath.empty()) {
     printf("Input Path:       %s\n", inputPath.generic_string().c_str());
-    bool success = compileSingleTarget(inputPath, outputTarget, cliChecksum, explicitOutputTarget);
+    bool success = compileSingleTarget(inputPath, outputTarget, cliChecksum, explicitOutputTarget, options);
     if (!success) return 1;
     printf("done\n");
     return 0;
@@ -269,7 +302,7 @@ int main(int argc, char *argv[]) {
       printf("Input Path:       %s\n", targetInput.generic_string().c_str());
     }
 
-    bool success = compileSingleTarget(targetInput, targetOutput, cliChecksum, explicitOutputTarget);
+    bool success = compileSingleTarget(targetInput, targetOutput, cliChecksum, explicitOutputTarget, options);
     if (!success) {
       allSuccess = false;
       printf("Error: Compilation failed for target %s\n", targetInput.generic_string().c_str());

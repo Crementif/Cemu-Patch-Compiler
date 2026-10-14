@@ -44,8 +44,6 @@ std::string rewritePrivateSymbols(
 std::string_view normalizeAssemblyLine(std::string_view line);
 bool parseCommonSymbolDirective(std::string_view line, std::string &symbol,
                                 uint32_t &sizeVal, uint32_t &alignVal);
-std::optional<std::string>
-parseTopLevelSymbolDefinition(std::string_view normalizedLine);
 void emitZeroInitializedData(TextFile &outputTextFile,
                             std::string_view symbol, uint32_t sizeVal,
                             uint32_t alignVal, uint32_t fillVal = 0);

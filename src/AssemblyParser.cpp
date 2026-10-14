@@ -398,27 +398,6 @@ bool parseCommonSymbolDirective(std::string_view line, std::string &symbol,
   return true;
 }
 
-std::optional<std::string>
-parseTopLevelSymbolDefinition(std::string_view normalizedLine) {
-  std::string symbol;
-  uint32_t sizeVal = 0;
-  uint32_t alignVal = 1;
-  if (parseCommonSymbolDirective(normalizedLine, symbol, sizeVal, alignVal)) {
-    return symbol;
-  }
-
-  if (normalizedLine.empty() || normalizedLine.back() != ':') {
-    return std::nullopt;
-  }
-
-  std::string_view label = normalizedLine.substr(0, normalizedLine.size() - 1);
-  if (label.empty() || label.front() == '.') {
-    return std::nullopt;
-  }
-
-  return std::string(label);
-}
-
 void emitZeroInitializedData(TextFile &outputTextFile,
                             std::string_view symbol, uint32_t sizeVal,
                             uint32_t alignVal, uint32_t fillVal) {

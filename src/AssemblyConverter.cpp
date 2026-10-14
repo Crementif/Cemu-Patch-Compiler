@@ -1,122 +1,7 @@
 #include "AssemblyConverter.h"
-#include "EmbeddedHeader.h"
 #include "StringParser.h"
 
-#include "clang/Frontend/CompilerInstance.h"
-#include "clang/Frontend/CompilerInvocation.h"
-#include "clang/Frontend/TextDiagnosticPrinter.h"
-#include "clang/CodeGen/CodeGenAction.h"
-#include "clang/Basic/DiagnosticOptions.h"
-#include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/ADT/SmallVector.h"
-#include "clang/Frontend/Utils.h"
-#include "llvm/Support/CommandLine.h"
-#include "clang/Lex/PreprocessorOptions.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "AsmUpdater.h"
-
-std::unique_ptr<TextFile> compileCppWithEmbeddedClang(
-    const std::string &sourceFilePath, std::string_view sourceFileContents) {
-  static bool targetsInitialized = false;
-  if (!targetsInitialized) {
-    llvm::InitializeAllTargets();
-    llvm::InitializeAllTargetMCs();
-    llvm::InitializeAllAsmPrinters();
-    llvm::InitializeAllAsmParsers();
-
-    int fake_argc = 4;
-    const char* fake_argv[] = {
-        "CemuPatchCompiler",
-        "-ppc-asm-full-reg-names",
-        "-disable-ppc-cmp-opt",
-        "-enable-ppc-branch-coalesce"
-    };
-    llvm::cl::ParseCommandLineOptions(fake_argc, fake_argv);
-
-    targetsInitialized = true;
-  }
-
-  clang::CompilerInstance clang;
-  clang::DiagnosticOptions *diagOpts = new clang::DiagnosticOptions();
-  clang::IntrusiveRefCntPtr<clang::DiagnosticsEngine> diags =
-      clang::CompilerInstance::createDiagnostics(diagOpts, new clang::TextDiagnosticPrinter(llvm::errs(), diagOpts));
-  clang.setDiagnostics(diags.get());
-
-  std::filesystem::path sourcePath(sourceFilePath);
-  std::string ext = sourcePath.extension().string();
-  bool forceCpp = (ext == ".c" || ext == ".h");
-
-  std::vector<const char*> args = {
-      "clang",
-      "-target", "powerpc-eabi",
-      "-mcpu=750",
-      "-m32",
-      "-mbig-endian",
-      "-mno-crbits",
-      "-ffreestanding",
-      "-fno-math-errno",
-      "-fno-autolink",
-      "-fno-data-sections",
-      "-fno-function-sections",
-      "-fno-exceptions",
-      "-fno-verbose-asm",
-      "-fno-rtti",
-      "-fbasic-block-sections=none",
-      "-O1",
-      "-fvisibility=default",
-      "-femit-all-decls",
-      "-fno-inline",
-      "-std=c++17",
-      "-mllvm", "-ppc-asm-full-reg-names",
-      "-mllvm", "-disable-ppc-cmp-opt",
-      "-mllvm", "-enable-ppc-branch-coalesce"
-  };
-
-  if (forceCpp) {
-    args.push_back("-x");
-    args.push_back("c++");
-  }
-
-  args.push_back("-S");
-  args.push_back(sourceFilePath.c_str());
-  args.push_back("-o");
-  args.push_back("-");
-
-  clang::CreateInvocationOptions opts;
-  opts.Diags = diags;
-  std::shared_ptr<clang::CompilerInvocation> invocation =
-      clang::createInvocation(args, opts);
-  if (!invocation) {
-    return nullptr;
-  }
-  // Inject PATCH_* macros as an implicit virtual header included in all compiles.
-  std::string macroDefinitions(kCemuPatchImplicitHeader);
-
-  invocation->getPreprocessorOpts().Includes.push_back("C:/__cemu_patch_macros.h");
-  auto buf = llvm::MemoryBuffer::getMemBufferCopy(macroDefinitions, "C:/__cemu_patch_macros.h");
-  invocation->getPreprocessorOpts().addRemappedFile("C:/__cemu_patch_macros.h", buf.release());
-  auto sourceBuffer =
-      llvm::MemoryBuffer::getMemBufferCopy(sourceFileContents, sourceFilePath);
-  invocation->getPreprocessorOpts().addRemappedFile(sourceFilePath,
-                                                     sourceBuffer.release());
-  invocation->getPreprocessorOpts().RetainRemappedFileBuffers = true;
-
-  invocation->getFrontendOpts().OutputFile = "-";
-  clang.setInvocation(invocation);
-
-  llvm::SmallVector<char, 0> byteVector;
-  clang.setOutputStream(std::make_unique<llvm::raw_svector_ostream>(byteVector));
-
-  std::unique_ptr<clang::FrontendAction> action = std::make_unique<clang::EmitAssemblyAction>();
-  if (!clang.ExecuteAction(*action)) {
-    return nullptr;
-  }
-
-  (void)clang.takeOutputStream();
-
-  return parseAssemblyFromMemory(std::string_view(byteVector.data(), byteVector.size()));
-}
 
 static void decodeGasStringLiterals(std::string_view sv, std::vector<uint8_t>& out) {
   size_t i = 0;
@@ -165,29 +50,16 @@ static void decodeGasStringLiterals(std::string_view sv, std::vector<uint8_t>& o
   }
 }
 
-bool AssemblyConverter::prepareCppForLinking(std::string_view sourceFilePath,
-                                             std::string_view moduleName,
-                                             std::string_view sourceContents) {
-  std::filesystem::path sourcePath(sourceFilePath);
-  printf("Compiling %s...\n", sourcePath.filename().string().c_str());
-  fflush(stdout);
-
-  m_inputTextFile =
-      compileCppWithEmbeddedClang(std::string(sourceFilePath), sourceContents);
-  if (!m_inputTextFile) {
-    printf("Error: Compilation failed using embedded Clang.\n");
-    return false;
-  }
-
+void AssemblyConverter::prepare(std::unique_ptr<TextFile> assembly,
+                                std::string_view moduleName) {
+  m_inputTextFile = std::move(assembly);
   m_moduleName = moduleName;
   m_unitHash = calculateUnitHash(moduleName);
   analyzeSymbols(*m_inputTextFile);
-  return true;
 }
 
 std::unique_ptr<TextFile>
-AssemblyConverter::emitPatch(std::string_view moduleGroupName, uint32_t moduleMatches,
-                             const std::set<std::string> &discardedDefinitions) {
+AssemblyConverter::emitPatch(std::string_view moduleGroupName, uint32_t moduleMatches) {
   cemu_assert_debug(m_inputTextFile != nullptr);
 
   auto outputTextFile = std::make_unique<TextFile>();
@@ -198,7 +70,7 @@ AssemblyConverter::emitPatch(std::string_view moduleGroupName, uint32_t moduleMa
   outputTextFile->lines.emplace_back("");
 
   m_patchDirectives.clear();
-  convertClangToCemu(*m_inputTextFile, *outputTextFile, discardedDefinitions);
+  convertClangToCemu(*m_inputTextFile, *outputTextFile);
   finalize(*outputTextFile);
   return outputTextFile;
 }
@@ -211,14 +83,12 @@ std::string AssemblyConverter::getEmittedSymbolName(std::string_view symbol) con
   return std::string(symbol);
 }
 
-void AssemblyConverter::convertClangToCemu(
-    const TextFile &inputFile, TextFile &outputTextFile,
-    const std::set<std::string> &discardedDefinitions) {
+void AssemblyConverter::convertClangToCemu(const TextFile &inputFile,
+                                           TextFile &outputTextFile) {
   printf("Starting convertClangToCemu for module %s...\n",
          m_moduleName.c_str());
   fflush(stdout);
 
-  bool discardingDefinition = false;
   std::set<size_t> stringDataLines;
   std::vector<std::pair<std::string, std::string>> symbolAliases;
   size_t firstOutputLine = outputTextFile.lines.size();
@@ -238,30 +108,6 @@ void AssemblyConverter::convertClangToCemu(
     inputLine = AsmUpdater_fixClangLocalLabels(m_unitHash, inputLine);
     inputLine = rewritePrivateSymbols(m_privateSymbolRenames, inputLine);
     std::string_view normalizedInputLine = normalizeAssemblyLine(inputLine);
-
-    if (discardingDefinition) {
-      auto nextDefinition = parseTopLevelSymbolDefinition(normalizedInputLine);
-      bool constantPool = normalizedInputLine.find("LCPI") != std::string_view::npos &&
-                          !normalizedInputLine.empty() && normalizedInputLine.back() == ':';
-      if (!constantPool && (!nextDefinition ||
-          !m_topLevelDefinedSymbols.contains(*nextDefinition))) {
-        continue;
-      }
-      discardingDefinition = false;
-    }
-
-    auto definitionSymbol = parseTopLevelSymbolDefinition(normalizedInputLine);
-    if (definitionSymbol && m_topLevelDefinedSymbols.contains(*definitionSymbol) &&
-        discardedDefinitions.contains(*definitionSymbol)) {
-      std::string commonSymbol;
-      uint32_t sizeVal = 0;
-      uint32_t alignVal = 1;
-      if (!parseCommonSymbolDirective(normalizedInputLine, commonSymbol,
-                                      sizeVal, alignVal)) {
-        discardingDefinition = true;
-      }
-      continue;
-    }
 
     // check for patch directive markers emitted by PATCH_* macros
     {
@@ -442,9 +288,6 @@ void AssemblyConverter::analyzeSymbols(const TextFile &inputFile) {
   fflush(stdout);
   m_privateSymbolRenames.clear();
   m_exportedSymbols.clear();
-  m_weakExportedSymbols.clear();
-  m_topLevelDefinedSymbols.clear();
-  m_definedExportedSymbols.clear();
 
   for (const auto &line : inputFile.lines) {
     std::string_view p = normalizeAssemblyLine(line);
@@ -452,19 +295,14 @@ void AssemblyConverter::analyzeSymbols(const TextFile &inputFile) {
       continue;
 
     StringTokenParser parser(p);
-    bool isWeak = parser.matchWordI(".weak");
-    if (!isWeak && !parser.matchWordI(".globl")) {
+    if (!parser.matchWordI(".weak") && !parser.matchWordI(".globl")) {
       continue;
     }
 
     const char *symbolStr;
     int32_t symbolLength;
     if (parser.parseSymbolName(symbolStr, symbolLength)) {
-      std::string symbol(symbolStr, symbolLength);
-      m_exportedSymbols.emplace(symbol);
-      if (isWeak) {
-        m_weakExportedSymbols.emplace(std::move(symbol));
-      }
+      m_exportedSymbols.emplace(symbolStr, symbolLength);
     }
   }
 
@@ -485,18 +323,9 @@ void AssemblyConverter::analyzeSymbols(const TextFile &inputFile) {
       return;
     }
 
-    std::string symbolName(symbol);
-    if (m_exportedSymbols.contains(symbolName)) {
-      m_definedExportedSymbols.try_emplace(
-          symbolName,
-          m_weakExportedSymbols.contains(symbolName)
-              ? ExportedSymbolLinkage::Weak
-              : ExportedSymbolLinkage::Strong);
-    } else {
-      registerPrivateSymbol(symbolName);
+    if (!m_exportedSymbols.contains(std::string(symbol))) {
+      registerPrivateSymbol(symbol);
     }
-
-    m_topLevelDefinedSymbols.emplace(getEmittedSymbolName(symbolName));
   };
 
   for (const auto &line : inputFile.lines) {

@@ -27,12 +27,14 @@ set(SOURCES
     src/AssemblyParser.cpp
     src/AssemblyConverter.cpp
     src/CompilerDriver.cpp
+    src/ModuleLinker.cpp
     src/EmbeddedHeader.h
     src/AsmUpdater.cpp
     src/InstructionAssembler.cpp
     src/AssemblyParser.h
     src/AssemblyConverter.h
     src/CompilerDriver.h
+    src/ModuleLinker.h
     src/AsmUpdater.h
     src/common.h
     src/InstructionAssembler.h
@@ -54,6 +56,9 @@ add_executable(CemuPatchCompiler ${SOURCES})
 # Map required LLVM components to library names
 llvm_map_components_to_libnames(llvm_libs
     Core
+    Linker
+    ipo
+    Passes
     MC
     MCParser
     Support

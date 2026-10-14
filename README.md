@@ -38,6 +38,7 @@ CemuPatchCompiler.exe "C:\Path\To\Source" -i "SUBF, MULLW"
 | `-o`, `--output <file\|dir>` | Specify target output patch file or directory. |
 | `-c`, `--checksum <hex>` | Override target module checksum (e.g. `0x6267BFD0`). |
 | `-i`, `--hardcode-instructions <list>` | Extend instructions to hardcode as `.int` (e.g. `SUBF, MULLW`). |
+| `-O0`, `-O1`, `-O2`, `-O3`, `-Os`, `-Oz` | Optimization level (default `-Os`). |
 
 ---
 
@@ -72,9 +73,10 @@ You can find the list of hardcoded instructions in [InstructionAssembler.cpp](/s
 Originally this was intended to only translate individual functions but over time it got expanded to handle larger projects. But there are still some limitations:
 - There is no runtime / standard library. You have to bootstrap everything yourself, including `new` and `delete`
 - The compiler provides self-contained float math helpers: `sqrtf`, `sinf`, `cosf`, `tanf`, `fabsf`, `copysignf`, `fminf`, `fmaxf`, `truncf`, `floorf`, `ceilf`, and `roundf`, plus double-precision `sqrt`. Normal `sqrtf` and `sqrt` refine the PowerPC reciprocal-square-root estimate for accuracy; explicit `__builtin_sqrtf` and `__builtin_sqrt` calls use the fast, unrefined estimate. The trigonometric helpers support finite inputs with magnitudes up to approximately `4.22e8`; larger inputs return NaN because accurate range reduction beyond that would require a full math runtime.
-- Static constructors are not run and global variables are not automatically initialized. You can work around this by declaring them `constinit` or having a manually invoked init function that handles it.
+- Static destructors never run.
 - The VTable format is different. This is not an issue as long as your code is self-contained. But if you replace classes in a game then you have to model the game's VTables as structs with pointers and offset fields
-- No real linking support. Rather this just appends one translation unit after another. This is not a huge issue but means there are side effects, like using a static function from a header in multiple .cpp files will not be deduplicated
+- Sources are compiled as C++20, also `.c` files.
+- Only `extern "C"` symbols, `__attribute__((used))` symbols and symbols named in a patch directive or `asm` block stay visible to the graphic pack.
 
 ---
 
