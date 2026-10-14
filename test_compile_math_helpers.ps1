@@ -61,11 +61,11 @@ if ($Assembly -notmatch '\bfrsqrte\b') {
     throw "Generated patch does not contain the expected frsqrte estimate instruction."
 }
 
-if ($Assembly -notmatch '(?m)^\.callback entry cemuPatchEntry[0-9]+$') {
+if ($Assembly -notmatch '(?m)^\.callback entry _[0-9a-f]{16}__cemu_patch_entry[0-9]+$') {
     throw "Generated patch does not contain the expected entry callback directive."
 }
 
-if ($Assembly -notmatch '(?m)^cemuPatchEntry[0-9]+:$') {
+if ($Assembly -notmatch '(?m)^_[0-9a-f]{16}__cemu_patch_entry[0-9]+:$') {
     throw "Generated patch does not contain the generated entry callback trampoline."
 }
 

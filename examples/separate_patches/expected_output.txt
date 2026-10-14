@@ -1,0 +1,5 @@
+# Console output that the title must produce while the patches are applied.
+# Each patch is compiled on its own and reports PASS from its entry callback, which only runs when Cemu applied
+# the graphic pack without duplicate labels.
+[PatchCompiler Separate Patches] first PASS
+[PatchCompiler Separate Patches] second PASS

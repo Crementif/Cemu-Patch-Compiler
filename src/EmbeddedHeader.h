@@ -26,7 +26,7 @@ inline constexpr std::string_view kCemuPatchImplicitHeader = R"CEMU_HEADER(
     extern "C" __attribute__((used)) void callbackName() { (void)(func()); } \
     asm("\n# __CEMU_PATCH: .callback entry " _CEMU_PATCH_TOSTRING(callbackName))
 #define PATCH_ON_ENTRY(func) \
-    _CEMU_PATCH_ENTRY_IMPL(func, _CEMU_PATCH_CONCAT(cemuPatchEntry, __COUNTER__))
+    _CEMU_PATCH_ENTRY_IMPL(func, _CEMU_PATCH_CONCAT(__cemu_patch_entry, __COUNTER__))
 // Compatibility spelling: Cemu invokes this immediately before the title entrypoint.
 #define PATCH_ON_LOAD(func) PATCH_ON_ENTRY(func)
 

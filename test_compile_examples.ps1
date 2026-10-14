@@ -407,8 +407,14 @@ foreach ($ExampleDir in $ExamplesToRun) {
     Get-ChildItem -Path $ExampleDir -Filter "patch_*.asm" -File | Where-Object { $_.Name -ne "patch_compiled.asm" } | ForEach-Object {
         Copy-Item $_.FullName -Destination (Join-Path $GraphicPackDir $_.Name) -Force
     }
-    # Create patch compiled asm path
-    $PatchFile = Join-Path $GraphicPackDir "patch_compiled.asm"
+    # An example is compiled into patch_compiled.asm, or if it has patch_* folders, each folder into its own patch
+    # file of the same graphic pack
+    $PatchBuilds = @(Get-ChildItem -Path $ExampleDir -Directory -Filter "patch_*" | ForEach-Object {
+        @{ Source = $_.FullName; Output = (Join-Path $GraphicPackDir "$($_.Name).asm") }
+    })
+    if ($PatchBuilds.Count -eq 0) {
+        $PatchBuilds = @(@{ Source = $ExampleDir; Output = (Join-Path $GraphicPackDir "patch_compiled.asm") })
+    }
 
     try {
         if (-not $SkipCompile) {
@@ -419,32 +425,40 @@ foreach ($ExampleDir in $ExamplesToRun) {
             }
 
             Write-Info "Compiler: $CompilerExe"
-            Write-Info "Source path: $ExampleDir"
-            Write-Info "Output file: $PatchFile"
+            foreach ($PatchBuild in $PatchBuilds) {
+                $PatchFile = $PatchBuild.Output
+                Write-Info "Source path: $($PatchBuild.Source)"
+                Write-Info "Output file: $PatchFile"
 
-            $CompilerArgs = @($ExampleDir, $PatchFile)
+                $CompilerArgs = @($PatchBuild.Source, $PatchFile)
 
-            $CompileProcess = Start-Process -FilePath $CompilerExe -ArgumentList $CompilerArgs -WorkingDirectory $WorkspaceRoot -NoNewWindow -PassThru -Wait
-            if ($CompileProcess.ExitCode -ne 0) {
-                throw "Patch compilation failed with exit code $($CompileProcess.ExitCode)."
-            }
+                $CompileProcess = Start-Process -FilePath $CompilerExe -ArgumentList $CompilerArgs -WorkingDirectory $WorkspaceRoot -NoNewWindow -PassThru -Wait
+                if ($CompileProcess.ExitCode -ne 0) {
+                    throw "Patch compilation failed with exit code $($CompileProcess.ExitCode)."
+                }
 
-            if (Test-Path $PatchFile) {
-                # Update moduleMatches checksum directly in patch_compiled.asm to avoid mutating C++ files
-                $AsmContent = [System.IO.File]::ReadAllText($PatchFile)
-                $AsmContent = $AsmContent -replace '(?m)^moduleMatches\s*=\s*0x[0-9A-Fa-f]+', "moduleMatches = 0x$($Metadata.ModuleChecksum)"
-                [System.IO.File]::WriteAllText($PatchFile, $AsmContent, [System.Text.Encoding]::ASCII)
-            } else {
-                throw "Compilation finished but output file not found at $PatchFile"
+                if (Test-Path $PatchFile) {
+                    # Update moduleMatches checksum directly in the patch file to avoid mutating C++ files
+                    $AsmContent = [System.IO.File]::ReadAllText($PatchFile)
+                    $AsmContent = $AsmContent -replace '(?m)^moduleMatches\s*=\s*0x[0-9A-Fa-f]+', "moduleMatches = 0x$($Metadata.ModuleChecksum)"
+                    [System.IO.File]::WriteAllText($PatchFile, $AsmContent, [System.Text.Encoding]::ASCII)
+                } else {
+                    throw "Compilation finished but output file not found at $PatchFile"
+                }
             }
 
             Write-Success "Patch compiled successfully."
-        } elseif (-not (Test-Path $PatchFile)) {
-            throw "SkipCompile was set but no compiled patch exists at $PatchFile."
+        } else {
+            foreach ($PatchBuild in $PatchBuilds) {
+                if (-not (Test-Path $PatchBuild.Output)) {
+                    throw "SkipCompile was set but no compiled patch exists at $($PatchBuild.Output)."
+                }
+            }
         }
 
-        $RequiresEntryCallback =
-            [System.IO.File]::ReadAllText($PatchFile) -match '(?m)^\.callback\s+entry\b'
+        $RequiresEntryCallback = @($PatchBuilds | Where-Object {
+            [System.IO.File]::ReadAllText($_.Output) -match '(?m)^\.callback\s+entry\b'
+        }).Count -gt 0
 
         Write-Info "Launching Homebrew with patch..."
         $LogLines = Invoke-CemuSmokeRun -BaseDir $CemuDir -Executable $CemuExe -LaunchGamePath $GamePath -Seconds $DurationSeconds

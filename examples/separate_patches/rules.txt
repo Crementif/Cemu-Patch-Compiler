@@ -1,0 +1,7 @@
+[Definition]
+titleIds = 00050000101C9300,00050000101C9400,00050000101C9500
+name = PatchCompiler Separate Patches Test
+path = "Cemu PatchCompiler/Separate Patches Test"
+description = Two separately compiled patches that both use the patch runtime in one graphic pack. Each logs PASS from its entry callback.
+version = 8
+default = 1

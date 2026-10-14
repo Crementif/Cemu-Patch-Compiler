@@ -124,6 +124,11 @@ static const std::vector<RuntimeUnit> &getRuntimeUnits() {
   return units;
 }
 
+static bool isRuntimeSymbol(llvm::StringRef symbol) {
+  const auto &units = getRuntimeUnits();
+  return std::any_of(units.begin(), units.end(), [&](const RuntimeUnit &unit) { return unit.providesSymbol(symbol); });
+}
+
 static std::unique_ptr<llvm::Module> compileToModule(llvm::LLVMContext &context,
                                                      const SourceUnit &source,
                                                      const CompileOptions &options,
@@ -467,9 +472,12 @@ static std::optional<std::set<std::string>> linkRuntimeUnits(llvm::LLVMContext &
   return definedByRuntime;
 }
 
-// The memory functions stay external until code generation in case it calls them, but if the optimized patch
-// doesn't use them at all they are dropped
-static void removeUnusedLibcalls(llvm::Module &module, const std::set<std::string> &definedByRuntime) {
+// The memory functions stay external during optimization, which would otherwise remove them since calls that code
+// generation makes don't count as uses. Afterwards the runtime's ones are dropped if the patch doesn't use them, and
+// the rest become private, so their labels get the patch's prefix like other internal symbols and don't collide with
+// the memcpy of another patch in the graphic pack. Code generation still calls them by name.
+static void finalizeLibcalls(llvm::Module &module, const std::set<std::string> &definedByRuntime,
+                             const std::set<std::string> &asmReferenced) {
   std::set<std::string_view> intrinsicLibcalls;
   for (auto &function : module) {
     if (!function.use_empty()) {
@@ -480,9 +488,22 @@ static void removeUnusedLibcalls(llvm::Module &module, const std::set<std::strin
   // memmove calls memcpy, so it goes first
   for (std::string_view libcall : kCodegenLibcalls) {
     auto *function = module.getFunction(libcall);
-    if (function && definedByRuntime.contains(std::string(libcall)) && function->use_empty() &&
-        !intrinsicLibcalls.contains(libcall))
+    if (!function || function->isDeclaration() || asmReferenced.contains(std::string(libcall)))
+      continue;
+    if (definedByRuntime.contains(std::string(libcall)) && function->use_empty() && !intrinsicLibcalls.contains(libcall))
       function->eraseFromParent();
+    else
+      function->setLinkage(llvm::GlobalValue::InternalLinkage);
+  }
+}
+
+// The entry callbacks of PATCH_ON_ENTRY and the static constructors are only named in this patch's directives, which
+// get the same label prefix, so they become private like the memory functions. They have to stay external during
+// optimization since LLVM doesn't see the directives.
+static void privatizeGeneratedSymbols(llvm::Module &module) {
+  for (auto &function : module) {
+    if (!function.isDeclaration() && function.getName().starts_with("__cemu_patch_"))
+      function.setLinkage(llvm::GlobalValue::InternalLinkage);
   }
 }
 
@@ -529,17 +550,19 @@ std::unique_ptr<TextFile> compileAndLinkSources(const std::vector<SourceUnit> &s
   bool hasConstructors = lowerGlobalConstructors(*linked);
   std::set<std::string> asmReferenced = collectAsmReferencedSymbols(*linked);
   // C++ symbols are only reachable from this patch, so they can be inlined and removed. C symbols
-  // stay external: hooks, symbols named in asm, and runtime functions code generation calls.
-  // The runtime's C functions are only called from this patch, except the memory functions.
+  // stay external: hooks and symbols named in asm. The functions the runtime provides are only called from this
+  // patch, also when the patch replaces them, like cemu_patch_alloc. The memory functions stay external until
+  // code generation.
   llvm::internalizeModule(*linked, [&](const llvm::GlobalValue &global) {
     llvm::StringRef name = global.getName();
     if (hasConstructors && name == llvm::StringRef(kGlobalCtorsSymbol))
       return true;
     if (asmReferenced.contains(name.str()))
       return true;
-    if (definedByRuntime->contains(name.str()))
-      return std::find(kCodegenLibcalls.begin(), kCodegenLibcalls.end(), std::string_view(name)) !=
-             kCodegenLibcalls.end();
+    if (std::find(kCodegenLibcalls.begin(), kCodegenLibcalls.end(), std::string_view(name)) != kCodegenLibcalls.end())
+      return true;
+    if (isRuntimeSymbol(name))
+      return false;
     return !name.starts_with("_Z");
   });
 
@@ -559,7 +582,8 @@ std::unique_ptr<TextFile> compileAndLinkSources(const std::vector<SourceUnit> &s
                                            : llvm::CodeGenOptLevel::Default));
 
   optimizeModule(*linked, *targetMachine, level);
-  removeUnusedLibcalls(*linked, *definedByRuntime);
+  finalizeLibcalls(*linked, *definedByRuntime, asmReferenced);
+  privatizeGeneratedSymbols(*linked);
   printStage("Optimized");
   sanitizeLocalSymbolNames(*linked);
   if (llvm::verifyModule(*linked, &llvm::errs())) {

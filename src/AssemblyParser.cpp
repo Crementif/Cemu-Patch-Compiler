@@ -1,6 +1,8 @@
 #include "AssemblyParser.h"
 #include "StringParser.h"
 
+#include <llvm/Support/xxhash.h>
+
 std::string_view trimAsciiWhitespace(std::string_view text) {
   while (!text.empty() &&
          std::isspace(static_cast<unsigned char>(text.front()))) {
@@ -280,15 +282,10 @@ void appendTextFile(TextFile &destination, std::unique_ptr<TextFile> source) {
   }
 }
 
+// Prefixes the private labels of a patch, so it has to differ between the patches of a graphic pack, which share
+// one label namespace in Cemu
 uint64_t calculateUnitHash(std::string_view moduleName) {
-  uint64_t unitHash = 0;
-  for (uint32_t t = 0; t < 8; t++) {
-    for (auto &itr : moduleName) {
-      unitHash += (uint64_t)itr;
-      unitHash = _rotr64(unitHash, 3);
-    }
-  }
-  return unitHash;
+  return llvm::xxh3_64bits(llvm::StringRef(moduleName.data(), moduleName.size()));
 }
 
 bool isAssemblySymbolChar(char ch) {
