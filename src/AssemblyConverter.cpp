@@ -369,8 +369,17 @@ void AssemblyConverter::convertClangToCemu(
     }
 
     // import directives
-    util_stringReplace(inputLine, "_IMPORT_GX2_", "import.gx2.");
-    util_stringReplace(inputLine, "_IMPORT_COREINIT_", "import.coreinit.");
+    for (size_t at = inputLine.find("_IMPORT_"); at != std::string::npos; at = inputLine.find("_IMPORT_", at + 1)) {
+      size_t end = at + 8;
+      while (end < inputLine.size() && (std::isupper(static_cast<unsigned char>(inputLine[end])) || std::isdigit(static_cast<unsigned char>(inputLine[end]))))
+        end++;
+      if (end == at + 8 || end >= inputLine.size() || inputLine[end] != '_')
+        continue;
+      std::string module = inputLine.substr(at + 8, end - at - 8);
+      for (char& c : module)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      inputLine.replace(at, end + 1 - at, "import." + module + ".");
+    }
 
     // Keep the final instruction normalization idempotent so instructions that
     // passed through one of the directive/parser paths are normalized as well.
