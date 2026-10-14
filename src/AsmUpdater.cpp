@@ -269,22 +269,30 @@ std::string AsmUpdater_fixClangLocalLabels(uint64_t unitHash, std::string instru
 {
 	// labels starting with a dot are private/local/weak labels that aren't meant to be globally visible
 	// to avoid name conflict between multiple translation units we add a file-specific prefix to each label
-	std::regex labelMatchRegex(R"(\.L([a-zA-Z0-9_\.]+))", std::regex::ECMAScript);
+	// matches \.L([a-zA-Z0-9_\.]+), scanned by hand since this runs for every line
+	auto isLabelChar = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.'; };
+	size_t at = instructionText.find(".L");
+	if (at == std::string::npos)
+		return instructionText;
 
 	std::string result;
-	std::smatch match;
-	std::string::const_iterator searchStart(instructionText.cbegin());
-
-	while (std::regex_search(searchStart, instructionText.cend(), match, labelMatchRegex))
+	size_t copied = 0;
+	for (; at != std::string::npos; at = instructionText.find(".L", at))
 	{
-		result.append(searchStart, match[0].first);
-
-		std::string labelName = match[1].str();
+		size_t end = at + 2;
+		while (end < instructionText.size() && isLabelChar(instructionText[end]))
+			end++;
+		if (end == at + 2)
+		{
+			at += 2;
+			continue;
+		}
+		std::string labelName = instructionText.substr(at + 2, end - at - 2);
 		std::replace(labelName.begin(), labelName.end(), '.', '_');
-
+		result.append(instructionText, copied, at - copied);
 		result.append(std::format("_{:016x}_L{}", unitHash, labelName));
-		searchStart = match[0].second;
+		copied = at = end;
 	}
-	result.append(searchStart, instructionText.cend());
+	result.append(instructionText, copied);
 	return result;
 }

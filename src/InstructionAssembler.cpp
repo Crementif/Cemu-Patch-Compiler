@@ -1,16 +1,25 @@
 #include "InstructionAssembler.h"
 
-#include "clang/Frontend/CompilerInstance.h"
-#include "clang/Frontend/CompilerInvocation.h"
-#include "clang/Frontend/TextDiagnosticPrinter.h"
-#include "clang/CodeGen/CodeGenAction.h"
-#include "clang/Basic/DiagnosticOptions.h"
+#include "llvm/MC/MCAsmBackend.h"
+#include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCCodeEmitter.h"
+#include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCInstrInfo.h"
+#include "llvm/MC/MCObjectFileInfo.h"
+#include "llvm/MC/MCObjectWriter.h"
+#include "llvm/MC/MCParser/MCAsmParser.h"
+#include "llvm/MC/MCParser/MCTargetAsmParser.h"
+#include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCSubtargetInfo.h"
+#include "llvm/MC/MCTargetOptions.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Object/ObjectFile.h"
-#include "llvm/Object/ELFObjectFile.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "clang/Frontend/Utils.h"
+#include "llvm/TargetParser/Triple.h"
 
 static std::set<std::string> g_hardcodedInstructions = {
 	"MFCR",
@@ -87,108 +96,89 @@ bool isForbiddenInstruction(const char* name)
 	return g_hardcodedInstructions.contains(upper);
 }
 
-static std::string getSectionBytes(const std::string& objectFilePath) {
-	auto bufferOrErr = llvm::MemoryBuffer::getFile(objectFilePath);
-	if (!bufferOrErr) return "";
-
-	auto objectOrErr = llvm::object::ObjectFile::createObjectFile(bufferOrErr.get()->getMemBufferRef());
-	if (!objectOrErr) return "";
-
-	llvm::object::ObjectFile* obj = objectOrErr.get().get();
-	for (const auto& section : obj->sections()) {
+static std::string getTextSectionBytes(llvm::MemoryBufferRef objectBuffer)
+{
+	auto objectOrErr = llvm::object::ObjectFile::createObjectFile(objectBuffer);
+	if (!objectOrErr)
+	{
+		llvm::consumeError(objectOrErr.takeError());
+		return "";
+	}
+	for (const auto& section : objectOrErr.get()->sections())
+	{
 		auto nameOrErr = section.getName();
-		if (nameOrErr && nameOrErr.get() == ".text") {
-			auto contentsOrErr = section.getContents();
-			if (contentsOrErr) {
-				llvm::StringRef contents = contentsOrErr.get();
-				return std::string(contents.data(), contents.size());
-			}
+		if (!nameOrErr || nameOrErr.get() != ".text")
+			continue;
+		auto contentsOrErr = section.getContents();
+		if (!contentsOrErr)
+		{
+			llvm::consumeError(contentsOrErr.takeError());
+			return "";
 		}
+		return contentsOrErr.get().str();
 	}
 	return "";
 }
 
-std::string assembleInstructionToBytes(std::string_view instruction)
+// Assembles the instruction with LLVM's integrated assembler into an in-memory object file, like llvm-mc does
+static std::string assembleInstructionToBytesUncached(std::string_view instruction)
 {
-	std::string instructionStr(instruction);
-
-	// Strip register name prefixes (r3 -> 3, cr0 -> 0) when calling Clang's integrated assembler
-	// because it expects numeric register operands in inline assembly context (unlike the frontend
-	// which uses -ppc-asm-full-reg-names and accepts rN names)
-	instructionStr = std::regex_replace(instructionStr, std::regex(R"(\br([0-9]+)\b)"), "$1");
-	instructionStr = std::regex_replace(instructionStr, std::regex(R"(\bf([0-9]+)\b)"), "$1");
-	instructionStr = std::regex_replace(instructionStr, std::regex(R"(\bcr([0-7])\b)"), "$1");
-
-	std::error_code ec;
-
-	// Write instruction to temp_assemble.cpp as global inline assembly
-	static uint64_t s_tempCounter = 0;
-	uint64_t tempId = s_tempCounter++;
-	std::string tempCppPath = std::format("temp_assemble_{}.cpp", tempId);
-	std::string tempOPath = std::format("temp_assemble_{}.o", tempId);
-	{
-		std::ofstream out(tempCppPath, std::ios::binary);
-		if (!out)
-			return "";
-		out << "asm(R\"(" << instructionStr << ")\");\n";
-	}
-
-	// Initialize targets
 	static bool targetsInitialized = false;
-	if (!targetsInitialized) {
-		llvm::InitializeAllTargets();
+	if (!targetsInitialized)
+	{
+		llvm::InitializeAllTargetInfos();
 		llvm::InitializeAllTargetMCs();
-		llvm::InitializeAllAsmPrinters();
 		llvm::InitializeAllAsmParsers();
 		targetsInitialized = true;
 	}
 
-	// Compile using embedded Clang
-	clang::CompilerInstance clang;
-	clang::DiagnosticOptions *diagOpts = new clang::DiagnosticOptions();
-	clang::IntrusiveRefCntPtr<clang::DiagnosticsEngine> diags =
-		clang::CompilerInstance::createDiagnostics(diagOpts, new clang::TextDiagnosticPrinter(llvm::errs(), diagOpts));
-	clang.setDiagnostics(diags.get());
-
-	std::vector<const char*> args = {
-		"clang",
-		"-target", "powerpc-eabi",
-		"-mcpu=750",
-		"-m32",
-		"-mbig-endian",
-		"-c",
-		tempCppPath.c_str(),
-		"-o", tempOPath.c_str()
-	};
-
-	clang::CreateInvocationOptions opts;
-	opts.Diags = diags;
-	std::shared_ptr<clang::CompilerInvocation> invocation =
-		clang::createInvocation(args, opts);
-	if (!invocation) {
-		std::filesystem::remove(tempCppPath, ec);
+	const llvm::Triple triple("powerpc-unknown-eabi");
+	std::string error;
+	const llvm::Target* target = llvm::TargetRegistry::lookupTarget(triple.getTriple(), error);
+	if (!target)
 		return "";
-	}
-	invocation->getFrontendOpts().OutputFile = tempOPath;
-	clang.setInvocation(invocation);
 
-	std::unique_ptr<clang::FrontendAction> action = std::make_unique<clang::EmitObjAction>();
-	if (!clang.ExecuteAction(*action)) {
-		std::filesystem::remove(tempCppPath, ec);
-		std::filesystem::remove(tempOPath, ec);
+	llvm::MCTargetOptions mcOptions;
+	std::unique_ptr<llvm::MCRegisterInfo> registerInfo(target->createMCRegInfo(triple.getTriple()));
+	std::unique_ptr<llvm::MCAsmInfo> asmInfo(target->createMCAsmInfo(*registerInfo, triple.getTriple(), mcOptions));
+	std::unique_ptr<llvm::MCInstrInfo> instrInfo(target->createMCInstrInfo());
+	std::unique_ptr<llvm::MCSubtargetInfo> subtargetInfo(target->createMCSubtargetInfo(triple.getTriple(), "750", ""));
+
+	// The assembler expects numeric register operands (r3 -> 3, cr0 -> 0), unlike the compiler output which uses
+	// -ppc-asm-full-reg-names
+	std::string instructionStr(instruction);
+	instructionStr = std::regex_replace(instructionStr, std::regex(R"(\br([0-9]+)\b)"), "$1");
+	instructionStr = std::regex_replace(instructionStr, std::regex(R"(\bf([0-9]+)\b)"), "$1");
+	instructionStr = std::regex_replace(instructionStr, std::regex(R"(\bcr([0-7])\b)"), "$1");
+
+	llvm::SourceMgr sourceMgr;
+	sourceMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(instructionStr + "\n"), llvm::SMLoc());
+	llvm::MCContext context(triple, asmInfo.get(), registerInfo.get(), subtargetInfo.get(), &sourceMgr, &mcOptions);
+	std::unique_ptr<llvm::MCObjectFileInfo> objectFileInfo(target->createMCObjectFileInfo(context, false));
+	context.setObjectFileInfo(objectFileInfo.get());
+
+	llvm::SmallString<256> objectData;
+	llvm::raw_svector_ostream objectStream(objectData);
+	std::unique_ptr<llvm::MCAsmBackend> asmBackend(target->createMCAsmBackend(*subtargetInfo, *registerInfo, mcOptions));
+	std::unique_ptr<llvm::MCCodeEmitter> codeEmitter(target->createMCCodeEmitter(*instrInfo, context));
+	if (!asmBackend || !codeEmitter)
 		return "";
-	}
+	std::unique_ptr<llvm::MCObjectWriter> objectWriter = asmBackend->createObjectWriter(objectStream);
+	std::unique_ptr<llvm::MCStreamer> streamer(target->createMCObjectStreamer(
+		triple, context, std::move(asmBackend), std::move(objectWriter), std::move(codeEmitter), *subtargetInfo,
+		false, false, false));
 
-	// Read the compiled bytes from .text section
-	std::string bytesStr = getSectionBytes(tempOPath);
-
-	// Clean up
-	std::filesystem::remove(tempCppPath, ec);
-	std::filesystem::remove(tempOPath, ec);
-
-	if (bytesStr.size() < 4) {
+	std::unique_ptr<llvm::MCAsmParser> parser(llvm::createMCAsmParser(sourceMgr, context, *streamer, *asmInfo));
+	std::unique_ptr<llvm::MCTargetAsmParser> targetParser(target->createMCAsmParser(*subtargetInfo, *parser, *instrInfo, mcOptions));
+	if (!targetParser)
 		return "";
-	}
+	parser->setTargetParser(*targetParser);
+	if (parser->Run(false))
+		return "";
+
+	std::string bytesStr = getTextSectionBytes(llvm::MemoryBufferRef(objectData.str(), "instruction"));
+	if (bytesStr.size() != 4)
+		return "";
 
 	uint32_t val = ((uint32_t)(unsigned char)bytesStr[0] << 24) |
 	               ((uint32_t)(unsigned char)bytesStr[1] << 16) |
@@ -196,4 +186,16 @@ std::string assembleInstructionToBytes(std::string_view instruction)
 	               (uint32_t)(unsigned char)bytesStr[3];
 
 	return std::format("0x{:08X}", val);
+}
+
+std::string assembleInstructionToBytes(std::string_view instruction)
+{
+	// the same few instructions repeat thousands of times
+	static std::map<std::string, std::string, std::less<>> s_encodedInstructions;
+	if (auto cached = s_encodedInstructions.find(instruction); cached != s_encodedInstructions.end())
+		return cached->second;
+	std::string encoded = assembleInstructionToBytesUncached(instruction);
+	if (!encoded.empty())
+		s_encodedInstructions.emplace(instruction, encoded);
+	return encoded;
 }
