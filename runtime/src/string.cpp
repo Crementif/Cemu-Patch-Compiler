@@ -1,10 +1,12 @@
 // provides: memcpy memmove memset memcmp memchr strlen strnlen strcmp strncmp strchr strrchr strstr strcpy strncpy
-// provides: strcat
+// provides: strcat strncat strspn strcspn strpbrk strtok strtok_r strcoll strxfrm strerror strcasecmp strncasecmp
 // Memory and string functions. Code generation also calls memcpy, memmove and memset for copies of structs and
 // arrays. Patches can define any of them themselves.
 
 #include <stdint.h>
+#include <errno.h>
 #include <string.h>
+#include <strings.h>
 
 typedef uint32_t __attribute__((may_alias)) AliasedWord;
 
@@ -149,4 +151,99 @@ extern "C" __attribute__((weak)) char* strncpy(char* __restrict dst, const char*
 extern "C" __attribute__((weak)) char* strcat(char* __restrict dst, const char* __restrict src) noexcept {
     strcpy(dst + strlen(dst), src);
     return dst;
+}
+
+extern "C" __attribute__((weak)) char* strncat(char* __restrict dst, const char* __restrict src, size_t size) noexcept {
+    char* d = dst + strlen(dst);
+    for (; size && *src; size--)
+        *d++ = *src++;
+    *d = '\0';
+    return dst;
+}
+
+extern "C" __attribute__((weak)) size_t strspn(const char* str, const char* accept) noexcept {
+    size_t length = 0;
+    while (str[length] && strchr(accept, str[length]))
+        length++;
+    return length;
+}
+
+extern "C" __attribute__((weak)) size_t strcspn(const char* str, const char* reject) noexcept {
+    size_t length = 0;
+    while (str[length] && !strchr(reject, str[length]))
+        length++;
+    return length;
+}
+
+extern "C" __attribute__((weak)) char* strpbrk(const char* str, const char* accept) noexcept {
+    str += strcspn(str, accept);
+    return *str ? (char*)str : nullptr;
+}
+
+extern "C" __attribute__((weak)) char* strtok_r(char* __restrict str, const char* __restrict separators,
+                                                 char** __restrict state) noexcept {
+    if (!str)
+        str = *state;
+    str += strspn(str, separators);
+    if (!*str) {
+        *state = str;
+        return nullptr;
+    }
+    char* end = str + strcspn(str, separators);
+    if (*end)
+        *end++ = '\0';
+    *state = end;
+    return str;
+}
+
+extern "C" __attribute__((weak)) char* strtok(char* __restrict str, const char* __restrict separators) noexcept {
+    static char* state = nullptr;
+    return strtok_r(str, separators, &state);
+}
+
+// The "C" locale collates by byte value
+extern "C" __attribute__((weak)) int strcoll(const char* a, const char* b) noexcept {
+    return strcmp(a, b);
+}
+
+extern "C" __attribute__((weak)) size_t strxfrm(char* __restrict dst, const char* __restrict src, size_t size) noexcept {
+    size_t length = strlen(src);
+    if (length < size)
+        memcpy(dst, src, length + 1);
+    return length;
+}
+
+extern "C" __attribute__((weak)) char* strerror(int error) noexcept {
+    switch (error) {
+    case 0:
+        return (char*)"Success";
+    case EDOM:
+        return (char*)"Numerical argument out of domain";
+    case ERANGE:
+        return (char*)"Numerical result out of range";
+    case EINVAL:
+        return (char*)"Invalid argument";
+    case ENOMEM:
+        return (char*)"Cannot allocate memory";
+    default:
+        return (char*)"Unknown error";
+    }
+}
+
+static int lowerAscii(unsigned char c) {
+    return c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c;
+}
+
+extern "C" __attribute__((weak)) int strcasecmp(const char* a, const char* b) noexcept {
+    for (; *a && lowerAscii(*a) == lowerAscii(*b); a++, b++) {
+    }
+    return lowerAscii(*a) - lowerAscii(*b);
+}
+
+extern "C" __attribute__((weak)) int strncasecmp(const char* a, const char* b, size_t size) noexcept {
+    for (; size; size--, a++, b++) {
+        if (lowerAscii(*a) != lowerAscii(*b) || !*a)
+            return lowerAscii(*a) - lowerAscii(*b);
+    }
+    return 0;
 }

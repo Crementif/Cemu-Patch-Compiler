@@ -1,4 +1,5 @@
 // provides: abort __cxa_pure_virtual __cxa_deleted_virtual _ZNSt3__122__libcpp_verbose_abortEPKcz
+// provides: __cemu_patch_assert_fail
 // Fatal errors of the patch runtime and libc++ (a failed allocation, an exception in a -fno-exceptions build or a
 // failed assertion) stop the game with OSFatal, which writes the message to the log and the screen.
 
@@ -100,6 +101,12 @@ __attribute__((weak, noreturn)) void std::__libcpp_verbose_abort(const char* for
     va_end(args);
     writer.text[writer.length] = '\0';
     _IMPORT_COREINIT_OSFatal(writer.text);
+}
+
+// assert() of <assert.h>
+extern "C" __attribute__((weak, noreturn)) void __cemu_patch_assert_fail(const char* expression, const char* file, int line,
+                                                                         const char* function) noexcept {
+    std::__libcpp_verbose_abort("%s:%d: %s: Assertion '%s' failed", file, line, function, expression);
 }
 
 extern "C" __attribute__((weak, noreturn)) void abort() noexcept {

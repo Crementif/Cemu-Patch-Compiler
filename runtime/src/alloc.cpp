@@ -1,4 +1,4 @@
-// provides: cemu_patch_alloc cemu_patch_free malloc calloc aligned_alloc free _ZSt7nothrow
+// provides: cemu_patch_alloc cemu_patch_free malloc calloc realloc aligned_alloc free strdup strndup _ZSt7nothrow
 // provides: _Znwm _Znam _ZnwmRKSt9nothrow_t _ZnamRKSt9nothrow_t _ZnwmSt11align_val_t _ZnamSt11align_val_t
 // provides: _ZnwmSt11align_val_tRKSt9nothrow_t _ZnamSt11align_val_tRKSt9nothrow_t
 // provides: _ZdlPv _ZdaPv _ZdlPvm _ZdaPvm _ZdlPvSt11align_val_t _ZdaPvSt11align_val_t _ZdlPvmSt11align_val_t
@@ -9,6 +9,8 @@
 // creates its own heaps from it during boot, so a patch should keep its allocations small. Blocks are taken from
 // the top of the heap, which leaves the large free space at the bottom in one piece for the game.
 // A patch replaces the allocator by defining cemu_patch_alloc and cemu_patch_free itself.
+// malloc keeps the size of each block in front of it for realloc, so memory from malloc, calloc, realloc,
+// aligned_alloc, strdup and strndup has to be released with free, and memory from new with delete.
 
 #include <new>
 #include <stdlib.h>
@@ -33,25 +35,88 @@ extern "C" __attribute__((weak)) void cemu_patch_free(void* ptr) noexcept {
         _IMPORT_COREINIT_MEMFreeToExpHeap(_IMPORT_COREINIT_MEMGetBaseHeapHandle(kMem2Arena), ptr);
 }
 
+namespace {
+
+// Right in front of each block malloc returns
+struct BlockHeader {
+    void* allocation;
+    size_t size;
+};
+
+void* allocateBlock(size_t size, size_t alignment) {
+    if (alignment < sizeof(BlockHeader))
+        alignment = sizeof(BlockHeader);
+    // the header fits in the first `alignment` bytes, which keeps the block aligned
+    if (size > (size_t)-1 - alignment)
+        return nullptr;
+    unsigned char* allocation = (unsigned char*)cemu_patch_alloc(size + alignment, alignment);
+    if (!allocation)
+        return nullptr;
+    BlockHeader* header = (BlockHeader*)(allocation + alignment) - 1;
+    header->allocation = allocation;
+    header->size = size;
+    return allocation + alignment;
+}
+
+BlockHeader* headerOf(void* ptr) {
+    return (BlockHeader*)ptr - 1;
+}
+
+}
+
 extern "C" __attribute__((weak)) void* malloc(size_t size) noexcept {
-    return cemu_patch_alloc(size, 8);
+    return allocateBlock(size, 8);
 }
 
 extern "C" __attribute__((weak)) void* calloc(size_t count, size_t size) noexcept {
     if (size && count > (size_t)-1 / size)
         return nullptr;
-    void* ptr = cemu_patch_alloc(count * size, 8);
+    void* ptr = allocateBlock(count * size, 8);
     if (ptr)
         memset(ptr, 0, count * size);
     return ptr;
 }
 
 extern "C" __attribute__((weak)) void* aligned_alloc(size_t alignment, size_t size) noexcept {
-    return cemu_patch_alloc(size, alignment);
+    return allocateBlock(size, alignment);
 }
 
 extern "C" __attribute__((weak)) void free(void* ptr) noexcept {
-    cemu_patch_free(ptr);
+    if (ptr)
+        cemu_patch_free(headerOf(ptr)->allocation);
+}
+
+// Shrinking keeps the block; growing moves it
+extern "C" __attribute__((weak)) void* realloc(void* ptr, size_t size) noexcept {
+    if (!ptr)
+        return malloc(size);
+    size_t oldSize = headerOf(ptr)->size;
+    if (size <= oldSize)
+        return ptr;
+    void* moved = malloc(size);
+    if (!moved)
+        return nullptr;
+    memcpy(moved, ptr, oldSize);
+    free(ptr);
+    return moved;
+}
+
+extern "C" __attribute__((weak)) char* strdup(const char* str) noexcept {
+    size_t size = strlen(str) + 1;
+    char* copy = (char*)malloc(size);
+    if (copy)
+        memcpy(copy, str, size);
+    return copy;
+}
+
+extern "C" __attribute__((weak)) char* strndup(const char* str, size_t maxSize) noexcept {
+    size_t length = strnlen(str, maxSize);
+    char* copy = (char*)malloc(length + 1);
+    if (copy) {
+        memcpy(copy, str, length);
+        copy[length] = '\0';
+    }
+    return copy;
 }
 
 const std::nothrow_t std::nothrow{};

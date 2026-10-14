@@ -369,8 +369,40 @@ static void optimizeModule(llvm::Module &module, llvm::TargetMachine &targetMach
   passes.run(module, moduleAnalysis);
 }
 
-// Code generation calls these for memory intrinsics it doesn't expand inline
-static constexpr std::array<std::string_view, 3> kCodegenLibcalls = {"memmove", "memset", "memcpy"};
+// Code generation calls these for memory intrinsics it doesn't expand inline, and for what the 750 has no
+// instructions for: 64-bit division, conversions between 64-bit integers and floating point, floating point
+// remainders and the math intrinsics the optimizer turns library calls into
+static constexpr auto kCodegenLibcalls = std::to_array<std::string_view>({
+    "memmove",   "memset",     "memcpy",   "__udivdi3", "__umoddi3",    "__divdi3",   "__moddi3",     "__fixsfdi",
+    "__fixunssfdi", "__fixdfdi", "__fixunsdfdi", "__floatdisf", "__floatundisf", "__floatdidf", "__floatundidf",
+    "fmod",      "fmodf",      "pow",      "powf",      "exp",          "expf",       "exp2",         "exp2f",
+    "log",       "logf",       "log2",     "log2f",     "log10",        "log10f",     "sin",          "cos",
+    "floor",     "ceil",       "trunc",    "round",     "rint",         "rintf",      "nearbyint",    "nearbyintf",
+    "fmin",      "fmax",       "ldexp",    "ldexpf",    "lround",       "lroundf",    "llround",      "llroundf",
+    "lrint",     "lrintf",     "llrint",   "llrintf"});
+
+// The library functions of math intrinsics, for double and float arguments. The float ones the implicit header
+// defines inline, like sinf, are left out.
+struct MathLibcall {
+  llvm::Intrinsic::ID intrinsic;
+  std::string_view ifDouble, ifFloat;
+};
+static constexpr MathLibcall kMathLibcalls[] = {
+    {llvm::Intrinsic::pow, "pow", "powf"},         {llvm::Intrinsic::exp, "exp", "expf"},
+    {llvm::Intrinsic::exp2, "exp2", "exp2f"},      {llvm::Intrinsic::log, "log", "logf"},
+    {llvm::Intrinsic::log2, "log2", "log2f"},      {llvm::Intrinsic::log10, "log10", "log10f"},
+    {llvm::Intrinsic::sin, "sin", ""},             {llvm::Intrinsic::cos, "cos", ""},
+    {llvm::Intrinsic::floor, "floor", ""},         {llvm::Intrinsic::ceil, "ceil", ""},
+    {llvm::Intrinsic::trunc, "trunc", ""},         {llvm::Intrinsic::round, "round", ""},
+    {llvm::Intrinsic::rint, "rint", "rintf"},      {llvm::Intrinsic::nearbyint, "nearbyint", "nearbyintf"},
+    {llvm::Intrinsic::minnum, "fmin", ""},         {llvm::Intrinsic::maxnum, "fmax", ""},
+    {llvm::Intrinsic::ldexp, "ldexp", "ldexpf"},   {llvm::Intrinsic::lround, "lround", "lroundf"},
+    {llvm::Intrinsic::llround, "llround", "llroundf"}, {llvm::Intrinsic::lrint, "lrint", "lrintf"},
+    {llvm::Intrinsic::llrint, "llrint", "llrintf"}};
+
+static std::string_view pickByFloatType(const llvm::Type *type, std::string_view ifFloat, std::string_view ifDouble) {
+  return type->isFloatTy() ? ifFloat : type->isDoubleTy() ? ifDouble : std::string_view();
+}
 
 static std::string_view getIntrinsicLibcall(const llvm::Function &function) {
   switch (function.getIntrinsicID()) {
@@ -381,24 +413,78 @@ static std::string_view getIntrinsicLibcall(const llvm::Function &function) {
   case llvm::Intrinsic::memset:
     return "memset";
   default:
+    break;
+  }
+  for (const MathLibcall &math : kMathLibcalls) {
+    // the first argument has the floating point type, also for ldexp and lround
+    if (function.getIntrinsicID() == math.intrinsic && function.arg_size() > 0)
+      return pickByFloatType(function.getArg(0)->getType(), math.ifFloat, math.ifDouble);
+  }
+  return {};
+}
+
+// The helper code generation calls for an instruction, if any
+static std::string_view getInstructionLibcall(const llvm::Instruction &instruction) {
+  auto isInt64 = [](const llvm::Type *type) { return type->isIntegerTy(64); };
+  auto pick = pickByFloatType;
+  const llvm::Type *type = instruction.getType();
+  switch (instruction.getOpcode()) {
+  case llvm::Instruction::UDiv:
+    return isInt64(type) ? "__udivdi3" : "";
+  case llvm::Instruction::URem:
+    return isInt64(type) ? "__umoddi3" : "";
+  case llvm::Instruction::SDiv:
+    return isInt64(type) ? "__divdi3" : "";
+  case llvm::Instruction::SRem:
+    return isInt64(type) ? "__moddi3" : "";
+  case llvm::Instruction::FPToSI:
+    return isInt64(type) ? pick(instruction.getOperand(0)->getType(), "__fixsfdi", "__fixdfdi") : "";
+  case llvm::Instruction::FPToUI:
+    return isInt64(type) ? pick(instruction.getOperand(0)->getType(), "__fixunssfdi", "__fixunsdfdi") : "";
+  case llvm::Instruction::SIToFP:
+    return isInt64(instruction.getOperand(0)->getType()) ? pick(type, "__floatdisf", "__floatdidf") : "";
+  case llvm::Instruction::UIToFP:
+    return isInt64(instruction.getOperand(0)->getType()) ? pick(type, "__floatundisf", "__floatundidf") : "";
+  case llvm::Instruction::FRem:
+    return pick(type, "fmodf", "fmod");
+  default:
     return {};
   }
 }
 
-// Symbols the module uses but doesn't define, including the library functions of memory intrinsics
-static std::set<std::string> collectUndefinedSymbols(llvm::Module &module) {
-  std::set<std::string> undefined;
-  for (auto &global : module.global_values()) {
-    if (!global.isDeclaration() || global.use_empty() || !global.hasName())
-      continue;
-    if (auto *function = llvm::dyn_cast<llvm::Function>(&global); function && function->isIntrinsic()) {
-      std::string_view libcall = getIntrinsicLibcall(*function);
-      if (auto *defined = libcall.empty() ? nullptr : module.getFunction(libcall); defined && !defined->isDeclaration())
-        continue;
-      if (!libcall.empty())
-        undefined.emplace(libcall);
+// The helpers code generation will call for the module's memory intrinsics and instructions
+static std::set<std::string_view> collectCodegenLibcalls(llvm::Module &module) {
+  std::set<std::string_view> libcalls;
+  for (auto &function : module) {
+    if (function.isDeclaration()) {
+      if (std::string_view libcall = getIntrinsicLibcall(function); !libcall.empty() && !function.use_empty())
+        libcalls.insert(libcall);
       continue;
     }
+    for (auto &block : function) {
+      for (auto &instruction : block) {
+        if (std::string_view libcall = getInstructionLibcall(instruction); !libcall.empty())
+          libcalls.insert(libcall);
+      }
+    }
+  }
+  return libcalls;
+}
+
+// Symbols the module uses but doesn't define, including the helpers code generation calls
+static std::set<std::string> collectUndefinedSymbols(llvm::Module &module) {
+  std::set<std::string> undefined;
+  for (std::string_view libcall : collectCodegenLibcalls(module)) {
+    if (auto *defined = module.getFunction(libcall); !defined || defined->isDeclaration())
+      undefined.emplace(libcall);
+  }
+  for (auto &global : module.global_values()) {
+    // libc++'s extern templates, like std::string's members, arrive as available_externally bodies that the
+    // optimizer may drop, so they still need the runtime's definition
+    if (!global.isDeclarationForLinker() || global.use_empty() || !global.hasName())
+      continue;
+    if (auto *function = llvm::dyn_cast<llvm::Function>(&global); function && function->isIntrinsic())
+      continue;
     undefined.emplace(global.getName().str());
   }
   return undefined;
@@ -407,7 +493,7 @@ static std::set<std::string> collectUndefinedSymbols(llvm::Module &module) {
 static std::set<std::string> collectDefinedSymbols(llvm::Module &module) {
   std::set<std::string> defined;
   for (auto &global : module.global_values()) {
-    if (!global.isDeclaration() && global.hasName())
+    if (!global.isDeclarationForLinker() && global.hasName())
       defined.emplace(global.getName().str());
   }
   return defined;
@@ -472,27 +558,29 @@ static std::optional<std::set<std::string>> linkRuntimeUnits(llvm::LLVMContext &
   return definedByRuntime;
 }
 
-// The memory functions stay external during optimization, which would otherwise remove them since calls that code
-// generation makes don't count as uses. Afterwards the runtime's ones are dropped if the patch doesn't use them, and
-// the rest become private, so their labels get the patch's prefix like other internal symbols and don't collide with
-// the memcpy of another patch in the graphic pack. Code generation still calls them by name.
+// The code generation helpers stay external during optimization, which would otherwise remove them since calls that
+// code generation makes don't count as uses. Afterwards the runtime's ones are dropped if the patch doesn't need them,
+// and the rest become private, so their labels get the patch's prefix like other internal symbols and don't collide
+// with the memcpy of another patch in the graphic pack. Code generation still calls them by name.
 static void finalizeLibcalls(llvm::Module &module, const std::set<std::string> &definedByRuntime,
                              const std::set<std::string> &asmReferenced) {
-  std::set<std::string_view> intrinsicLibcalls;
-  for (auto &function : module) {
-    if (!function.use_empty()) {
-      if (std::string_view libcall = getIntrinsicLibcall(function); !libcall.empty())
-        intrinsicLibcalls.insert(libcall);
+  // a dropped helper can be the last one needing another, like memmove needing memcpy
+  for (bool dropped = true; dropped;) {
+    dropped = false;
+    std::set<std::string_view> needed = collectCodegenLibcalls(module);
+    for (std::string_view libcall : kCodegenLibcalls) {
+      auto *function = module.getFunction(libcall);
+      if (!function || function->isDeclaration() || asmReferenced.contains(std::string(libcall)))
+        continue;
+      if (definedByRuntime.contains(std::string(libcall)) && function->use_empty() && !needed.contains(libcall)) {
+        function->eraseFromParent();
+        dropped = true;
+      }
     }
   }
-  // memmove calls memcpy, so it goes first
   for (std::string_view libcall : kCodegenLibcalls) {
     auto *function = module.getFunction(libcall);
-    if (!function || function->isDeclaration() || asmReferenced.contains(std::string(libcall)))
-      continue;
-    if (definedByRuntime.contains(std::string(libcall)) && function->use_empty() && !intrinsicLibcalls.contains(libcall))
-      function->eraseFromParent();
-    else
+    if (function && !function->isDeclaration() && !asmReferenced.contains(std::string(libcall)))
       function->setLinkage(llvm::GlobalValue::InternalLinkage);
   }
 }
