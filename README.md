@@ -71,10 +71,10 @@ You can find the list of hardcoded instructions in [InstructionAssembler.cpp](/s
 ## Limitations
 
 Originally this was intended to only translate individual functions but over time it got expanded to handle larger projects. But there are still some limitations:
-- No exceptions, RTTI, threads, iostreams, files or locales. Where libc++ would throw, the game stops with `OSFatal`.
-- `new` and `delete` use the game's default heap. Define `cemu_patch_alloc` and `cemu_patch_free` to use another one.
-- `sinf`, `cosf` and `tanf` return NaN for inputs beyond about `4.22e8`.
-- Static destructors never run.
+- No exceptions, RTTI, threads, iostreams, files or locales. Anything that would throw calls `OSFatal`.
+- `new` and `delete` use the game's default heap, but this can be overridden by defining `cemu_patch_alloc` and `cemu_patch_free`.
+- `sinf`, `cosf` and `tanf` return NaN for values above `4.22e8`.
+- Static destructors don't work.
 - The VTable format is different. This is not an issue as long as your code is self-contained. But if you replace classes in a game then you have to model the game's VTables as structs with pointers and offset fields
 - Sources are compiled as C++20, also `.c` files.
 - Only `extern "C"` symbols, `__attribute__((used))` symbols and symbols named in a patch directive or `asm` block stay visible to the graphic pack.
@@ -90,3 +90,13 @@ The first configure builds LLVM from the vcpkg submodule, which takes a while.
 build.bat                  # Build executable (Release)
 powershell .\test_compile_examples.ps1   # Run integration tests
 ```
+
+---
+
+## Credits
+
+- [LLVM](https://llvm.org) is used to build the compiler.
+- The headers of [libc++](https://libcxx.llvm.org) 18.1.6 are included in [dependencies/libcxx](/dependencies/libcxx).
+- clang's freestanding C headers are included.
+
+All of these are licensed under the Apache License v2.0 with LLVM Exceptions, see [LICENSE.TXT](/dependencies/libcxx/LICENSE.TXT).
