@@ -10,6 +10,7 @@
 #include "clang/Frontend/Utils.h"
 #include "clang/Lex/PreprocessorOptions.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
@@ -156,6 +157,8 @@ static std::unique_ptr<llvm::Module> compileToModule(llvm::LLVMContext &context,
       "-m32",
       "-mbig-endian",
       "-mno-crbits",
+      // long double is double, so it uses the double math functions instead of 128-bit software floats
+      "-mlong-double-64",
       "-ffreestanding",
       "-fno-math-errno",
       "-fno-autolink",
@@ -605,6 +608,46 @@ static void privatizeGeneratedSymbols(llvm::Module &module) {
   }
 }
 
+// The math functions of <cmath> the runtime doesn't have, which LLVM's list of library functions leaves out
+static bool isUnknownMathFunction(llvm::StringRef name) {
+  for (llvm::StringRef function : {"erf", "erfc", "tgamma", "lgamma"}) {
+    if (name == function || (name.size() == function.size() + 1 && name.starts_with(function) &&
+                             (name.back() == 'f' || name.back() == 'l')))
+      return true;
+  }
+  return false;
+}
+
+// Other patches of the graphic pack can define symbols this patch uses, but not the standard library functions that
+// neither the patch nor the runtime defines
+static bool checkUnsupportedLibraryUses(llvm::Module &module) {
+  llvm::TargetLibraryInfoImpl libraryInfo(llvm::Triple(module.getTargetTriple()));
+  std::vector<std::string> unsupported;
+  for (auto &global : module.global_values()) {
+    if (!global.isDeclaration() || global.use_empty())
+      continue;
+    if (auto *function = llvm::dyn_cast<llvm::Function>(&global); function && function->isIntrinsic())
+      continue;
+    llvm::StringRef name = global.getName();
+    llvm::LibFunc libFunc;
+    if (name.starts_with("_ZNSt3__") || name.starts_with("_ZNKSt3__") || name.starts_with("_ZTVNSt3__")) {
+      // without libc++'s inline namespace
+      std::string demangled = llvm::demangle(name);
+      for (size_t at; (at = demangled.find("std::__1::")) != std::string::npos;)
+        demangled.erase(at + 5, 5);
+      unsupported.push_back(demangled);
+    } else if (libraryInfo.getLibFunc(name, libFunc) || isUnknownMathFunction(name)) {
+      unsupported.push_back(name.str());
+    }
+  }
+  if (unsupported.empty())
+    return true;
+  printf("Error: The patch uses parts of the standard library that patches don't support:\n");
+  for (const auto &symbol : unsupported)
+    printf("  %s\n", symbol.c_str());
+  return false;
+}
+
 std::unique_ptr<TextFile> compileAndLinkSources(const std::vector<SourceUnit> &sources,
                                                 const CompileOptions &options) {
   initializeLlvmOnce();
@@ -683,6 +726,8 @@ std::unique_ptr<TextFile> compileAndLinkSources(const std::vector<SourceUnit> &s
   finalizeLibcalls(*linked, *definedByRuntime, asmReferenced);
   privatizeGeneratedSymbols(*linked);
   printStage("Optimized");
+  if (!checkUnsupportedLibraryUses(*linked))
+    return nullptr;
   sanitizeLocalSymbolNames(*linked);
   if (llvm::verifyModule(*linked, &llvm::errs())) {
     printf("Error: The linked module is invalid.\n");

@@ -1,9 +1,8 @@
 // provides: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE* _ZNSt3__19to_stringE*
 // provides: _ZNSt3__14stoiE* _ZNSt3__14stolE* _ZNSt3__15stoulE* _ZNSt3__15stollE* _ZNSt3__16stoullE*
-// provides: _ZNSt3__14stofE* _ZNSt3__14stodE*
+// provides: _ZNSt3__14stofE* _ZNSt3__14stodE* _ZNSt3__15stoldE*
 // libc++ declares std::string's members as instantiated in its compiled library, so they are instantiated here
-// the same way libc++'s string.cpp does, with to_string and the sto functions next to them. long double isn't
-// supported by either.
+// the same way libc++'s string.cpp does, with to_string and the sto functions next to them.
 
 #include <charconv>
 #include <errno.h>
@@ -39,6 +38,7 @@ string to_string(double value) {
     int length = snprintf(buffer, sizeof(buffer), "%f", value);
     return string(buffer, length);
 }
+string to_string(long double value) { return to_string((double)value); }
 
 // Parses the number at the start of str with convert(text, end), stopping the game like libc++ would throw when there
 // is no number or it is out of range
@@ -80,5 +80,6 @@ unsigned long long stoull(const string& str, size_t* index, int base) {
 }
 float stof(const string& str, size_t* index) { return parse("stof", str, index, strtof); }
 double stod(const string& str, size_t* index) { return parse("stod", str, index, strtod); }
+long double stold(const string& str, size_t* index) { return parse("stold", str, index, strtod); }
 
 _LIBCPP_END_NAMESPACE_STD

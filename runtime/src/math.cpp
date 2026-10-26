@@ -2,11 +2,8 @@
 // provides: nearbyint nearbyintf lrint llrint lrintf llrintf fmod fmodf modf modff frexp frexpf ldexp ldexpf scalbn
 // provides: scalbnf fma fmaf sin cos tan asin acos atan atan2 asinf acosf atanf atan2f sinh cosh tanh sinhf coshf
 // provides: tanhf asinh acosh atanh asinhf acoshf atanhf exp exp2 expm1 expf exp2f expm1f log log2 log10 log1p logf
-// provides: log2f log10f log1pf pow powf cbrt cbrtf hypot hypotf
-// The math functions the implicit header doesn't define inline. The double functions follow fdlibm and are accurate
-// to about one ulp, pow to a few ulp. The float functions compute in double, so they round correctly to float in
-// almost all cases. They pass doubles explicitly, since libc++'s float overloads would call the float function
-// again. sin, cos and tan reduce exactly up to 1.6e6 and lose accuracy gradually beyond that.
+// provides: log2f log10f log1pf pow powf cbrt cbrtf hypot hypotf scalbln scalblnf ilogb ilogbf logb logbf remainder
+// provides: remainderf remquo remquof nextafter nextafterf nexttoward nexttowardf
 
 #include <math.h>
 
@@ -300,6 +297,14 @@ extern "C" __attribute__((weak)) float scalbnf(float x, int n) {
     return (float)scalbn((double)x, n);
 }
 
+extern "C" __attribute__((weak)) double scalbln(double x, long n) {
+    return scalbn(x, (int)n);
+}
+
+extern "C" __attribute__((weak)) float scalblnf(float x, long n) {
+    return scalbnf(x, (int)n);
+}
+
 extern "C" __attribute__((weak)) double ldexp(double x, int n) {
     return scalbn(x, n);
 }
@@ -377,6 +382,103 @@ extern "C" __attribute__((weak)) double fmod(double x, double y) {
 extern "C" __attribute__((weak)) float fmodf(float x, float y) {
     // exact in double, and the remainder fits in float
     return (float)fmod((double)x, (double)y);
+}
+
+extern "C" __attribute__((weak)) int ilogb(double x) {
+    if (x == 0)
+        return FP_ILOGB0;
+    if (x != x)
+        return FP_ILOGBNAN;
+    if (!isFinite(x))
+        return __INT_MAX__;
+    int exponent;
+    frexp(x, &exponent);
+    return exponent - 1;
+}
+
+extern "C" __attribute__((weak)) int ilogbf(float x) {
+    return ilogb((double)x);
+}
+
+extern "C" __attribute__((weak)) double logb(double x) {
+    if (x == 0)
+        return -kInfinity;
+    if (!isFinite(x))
+        return x * x;
+    return ilogb(x);
+}
+
+extern "C" __attribute__((weak)) float logbf(float x) {
+    return (float)logb((double)x);
+}
+
+// x minus y times the nearest integer to x / y, and the low three bits of that integer
+extern "C" __attribute__((weak)) double remquo(double x, double y, int* quotient) {
+    *quotient = 0;
+    if (y == 0 || y != y || x != x || !isFinite(x))
+        return (x * y) / (x * y);
+    if (!isFinite(y))
+        return x;
+    double ay = fabs(y);
+    // fmod by 8y keeps the three bits, and every subtraction below is exact
+    double r = ay < 0x1p1021 ? fmod(fabs(x), 8 * ay) : fabs(x);
+    int bits = 0;
+    for (int step = 4; step; step >>= 1) {
+        if (r >= step * ay) {
+            r -= step * ay;
+            bits += step;
+        }
+    }
+    if (2 * r > ay || (2 * r == ay && (bits & 1))) {
+        r -= ay;
+        bits++;
+    }
+    bits &= 7;
+    *quotient = (bitsOf(x) ^ bitsOf(y)) & kSign ? -bits : bits;
+    return bitsOf(x) & kSign ? -r : r;
+}
+
+extern "C" __attribute__((weak)) double remainder(double x, double y) {
+    int quotient;
+    return remquo(x, y, &quotient);
+}
+
+extern "C" __attribute__((weak)) float remquof(float x, float y, int* quotient) {
+    return (float)remquo((double)x, (double)y, quotient);
+}
+
+extern "C" __attribute__((weak)) float remainderf(float x, float y) {
+    return (float)remainder((double)x, (double)y);
+}
+
+extern "C" __attribute__((weak)) double nextafter(double x, double y) {
+    if (x != x || y != y)
+        return x + y;
+    if (x == y)
+        return y;
+    if (x == 0)
+        return copysign(fromBits(1ull), y);
+    u64 bits = bitsOf(x);
+    return fromBits((y > x) == (x > 0) ? bits + 1 : bits - 1);
+}
+
+extern "C" __attribute__((weak)) double nexttoward(double x, long double y) {
+    return nextafter(x, (double)y);
+}
+
+extern "C" __attribute__((weak)) float nexttowardf(float x, long double y) {
+    if (x != x || y != y)
+        return (float)(x + y);
+    if (x == y)
+        return (float)y;
+    if (x == 0)
+        return fromBits(y > 0 ? 1u : 0x80000001u);
+    u32 bits = bitsOf(x);
+    return fromBits((y > x) == (x > 0) ? bits + 1 : bits - 1);
+}
+
+extern "C" __attribute__((weak)) float nextafterf(float x, float y) {
+    return nexttowardf(x, y);
 }
 
 // Trigonometry

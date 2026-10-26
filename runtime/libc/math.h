@@ -1,6 +1,3 @@
-// <math.h> for Cemu patches. The implicit Cemu patch header defines sqrtf, sqrt, sinf, cosf, tanf, fabsf, copysignf,
-// fminf, fmaxf, truncf, floorf, ceilf and roundf inline, so they exist without including anything. The other
-// functions are implemented by the patch runtime. long double has no math functions.
 
 #ifndef _CEMU_PATCH_MATH_H
 #define _CEMU_PATCH_MATH_H
@@ -18,6 +15,9 @@
 #define HUGE_VALL __builtin_huge_vall()
 #define INFINITY __builtin_inff()
 #define NAN __builtin_nanf("")
+
+#define FP_ILOGB0 (-2147483647 - 1)
+#define FP_ILOGBNAN (-2147483647 - 1)
 
 #define MATH_ERRNO 1
 #define MATH_ERREXCEPT 2
@@ -92,6 +92,24 @@ double ldexp(double x, int exponent);
 float ldexpf(float x, int exponent);
 double scalbn(double x, int exponent);
 float scalbnf(float x, int exponent);
+double scalbln(double x, long exponent);
+float scalblnf(float x, long exponent);
+int ilogb(double x);
+int ilogbf(float x);
+double logb(double x);
+float logbf(float x);
+
+double remainder(double x, double y);
+float remainderf(float x, float y);
+double remquo(double x, double y, int* quotient);
+float remquof(float x, float y, int* quotient);
+double nextafter(double x, double y);
+float nextafterf(float x, float y);
+double nexttoward(double x, long double y);
+float nexttowardf(float x, long double y);
+
+_CEMU_PATCH_INLINE double nan(const char* tag) { (void)tag; return __builtin_nan(""); }
+_CEMU_PATCH_INLINE float nanf(const char* tag) { (void)tag; return __builtin_nanf(""); }
 
 double sin(double x);
 double cos(double x);
@@ -137,6 +155,64 @@ float log1pf(float x);
 float powf(float x, float y);
 float cbrtf(float x);
 float hypotf(float x, float y);
+
+_CEMU_PATCH_INLINE long double fabsl(long double x) { return fabs(x); }
+_CEMU_PATCH_INLINE long double copysignl(long double magnitude, long double sign) { return copysign(magnitude, sign); }
+_CEMU_PATCH_INLINE long double fminl(long double x, long double y) { return fmin(x, y); }
+_CEMU_PATCH_INLINE long double fmaxl(long double x, long double y) { return fmax(x, y); }
+_CEMU_PATCH_INLINE long double fdiml(long double x, long double y) { return fdim(x, y); }
+_CEMU_PATCH_INLINE long double fmal(long double x, long double y, long double z) { return fma(x, y, z); }
+_CEMU_PATCH_INLINE long double sqrtl(long double x) { return sqrt(x); }
+
+_CEMU_PATCH_INLINE long double truncl(long double x) { return trunc(x); }
+_CEMU_PATCH_INLINE long double floorl(long double x) { return floor(x); }
+_CEMU_PATCH_INLINE long double ceill(long double x) { return ceil(x); }
+_CEMU_PATCH_INLINE long double roundl(long double x) { return round(x); }
+_CEMU_PATCH_INLINE long double rintl(long double x) { return rint(x); }
+_CEMU_PATCH_INLINE long double nearbyintl(long double x) { return nearbyint(x); }
+_CEMU_PATCH_INLINE long lroundl(long double x) { return lround(x); }
+_CEMU_PATCH_INLINE long long llroundl(long double x) { return llround(x); }
+_CEMU_PATCH_INLINE long lrintl(long double x) { return lrint(x); }
+_CEMU_PATCH_INLINE long long llrintl(long double x) { return llrint(x); }
+
+_CEMU_PATCH_INLINE long double fmodl(long double x, long double y) { return fmod(x, y); }
+_CEMU_PATCH_INLINE long double remainderl(long double x, long double y) { return remainder(x, y); }
+_CEMU_PATCH_INLINE long double remquol(long double x, long double y, int* quotient) { return remquo(x, y, quotient); }
+_CEMU_PATCH_INLINE long double modfl(long double x, long double* integral) { return modf(x, (double*)integral); }
+_CEMU_PATCH_INLINE long double frexpl(long double x, int* exponent) { return frexp(x, exponent); }
+_CEMU_PATCH_INLINE long double ldexpl(long double x, int exponent) { return ldexp(x, exponent); }
+_CEMU_PATCH_INLINE long double scalbnl(long double x, int exponent) { return scalbn(x, exponent); }
+_CEMU_PATCH_INLINE long double scalblnl(long double x, long exponent) { return scalbln(x, exponent); }
+_CEMU_PATCH_INLINE int ilogbl(long double x) { return ilogb(x); }
+_CEMU_PATCH_INLINE long double logbl(long double x) { return logb(x); }
+_CEMU_PATCH_INLINE long double nextafterl(long double x, long double y) { return nextafter(x, y); }
+_CEMU_PATCH_INLINE long double nexttowardl(long double x, long double y) { return nextafter(x, y); }
+_CEMU_PATCH_INLINE long double nanl(const char* tag) { return nan(tag); }
+
+_CEMU_PATCH_INLINE long double sinl(long double x) { return sin(x); }
+_CEMU_PATCH_INLINE long double cosl(long double x) { return cos(x); }
+_CEMU_PATCH_INLINE long double tanl(long double x) { return tan(x); }
+_CEMU_PATCH_INLINE long double asinl(long double x) { return asin(x); }
+_CEMU_PATCH_INLINE long double acosl(long double x) { return acos(x); }
+_CEMU_PATCH_INLINE long double atanl(long double x) { return atan(x); }
+_CEMU_PATCH_INLINE long double atan2l(long double y, long double x) { return atan2(y, x); }
+_CEMU_PATCH_INLINE long double sinhl(long double x) { return sinh(x); }
+_CEMU_PATCH_INLINE long double coshl(long double x) { return cosh(x); }
+_CEMU_PATCH_INLINE long double tanhl(long double x) { return tanh(x); }
+_CEMU_PATCH_INLINE long double asinhl(long double x) { return asinh(x); }
+_CEMU_PATCH_INLINE long double acoshl(long double x) { return acosh(x); }
+_CEMU_PATCH_INLINE long double atanhl(long double x) { return atanh(x); }
+
+_CEMU_PATCH_INLINE long double expl(long double x) { return exp(x); }
+_CEMU_PATCH_INLINE long double exp2l(long double x) { return exp2(x); }
+_CEMU_PATCH_INLINE long double expm1l(long double x) { return expm1(x); }
+_CEMU_PATCH_INLINE long double logl(long double x) { return log(x); }
+_CEMU_PATCH_INLINE long double log2l(long double x) { return log2(x); }
+_CEMU_PATCH_INLINE long double log10l(long double x) { return log10(x); }
+_CEMU_PATCH_INLINE long double log1pl(long double x) { return log1p(x); }
+_CEMU_PATCH_INLINE long double powl(long double x, long double y) { return pow(x, y); }
+_CEMU_PATCH_INLINE long double cbrtl(long double x) { return cbrt(x); }
+_CEMU_PATCH_INLINE long double hypotl(long double x, long double y) { return hypot(x, y); }
 
 _CEMU_PATCH_END_C
 

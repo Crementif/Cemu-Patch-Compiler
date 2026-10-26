@@ -1,7 +1,5 @@
 // provides: abort __cxa_pure_virtual __cxa_deleted_virtual _ZNSt3__122__libcpp_verbose_abortEPKcz
-// provides: __cemu_patch_assert_fail
-// Fatal errors of the patch runtime and libc++ (a failed allocation, an exception in a -fno-exceptions build or a
-// failed assertion) stop the game with OSFatal, which writes the message to the log and the screen.
+// provides: __cemu_patch_assert_fail _ZNSt3__117__throw_bad_allocEv _ZNSt3__120__throw_system_errorEiPKc
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -112,6 +110,19 @@ extern "C" __attribute__((weak, noreturn)) void __cemu_patch_assert_fail(const c
 extern "C" __attribute__((weak, noreturn)) void abort() noexcept {
     _IMPORT_COREINIT_OSFatal("Patch called abort()");
 }
+
+_LIBCPP_BEGIN_NAMESPACE_STD
+
+__attribute__((weak, noreturn)) void __throw_bad_alloc() {
+    __libcpp_verbose_abort("bad_alloc was thrown in -fno-exceptions mode");
+}
+
+__attribute__((weak, noreturn)) void __throw_system_error(int error, const char* message) {
+    __libcpp_verbose_abort("system_error was thrown in -fno-exceptions mode with error %i and message \"%s\"", error,
+                           message);
+}
+
+_LIBCPP_END_NAMESPACE_STD
 
 // vtables of abstract classes point their pure and deleted virtual functions here
 extern "C" __attribute__((weak, noreturn)) void __cxa_pure_virtual() {

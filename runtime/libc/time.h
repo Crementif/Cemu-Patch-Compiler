@@ -1,4 +1,4 @@
-// Time types for libc++'s <chrono>. Patches have no C clock functions.
+// Time types for libc++'s <chrono>, and time(), which reads the console's date and time
 
 #ifndef _CEMU_PATCH_TIME_H
 #define _CEMU_PATCH_TIME_H
@@ -29,6 +29,8 @@ struct tm {
     int tm_yday;
     int tm_isdst;
 };
+
+time_t time(time_t* result) _CEMU_PATCH_NOEXCEPT;
 
 _CEMU_PATCH_END_C
 

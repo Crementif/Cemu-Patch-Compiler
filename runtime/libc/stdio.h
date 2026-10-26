@@ -1,5 +1,3 @@
-// Patches have no file streams. This provides formatting to and from strings, printf and puts, which write a line to
-// the log through OSReport, and the types and constants libc++ refers to.
 
 #ifndef _CEMU_PATCH_STDIO_H
 #define _CEMU_PATCH_STDIO_H
@@ -12,6 +10,9 @@
 #define SEEK_SET 0
 #define SEEK_CUR 1
 #define SEEK_END 2
+
+#define stdout ((FILE*)1)
+#define stderr ((FILE*)2)
 
 _CEMU_PATCH_BEGIN_C
 
@@ -34,6 +35,18 @@ int vsscanf(const char* __restrict input, const char* __restrict format, va_list
 int printf(const char* __restrict format, ...) __attribute__((format(printf, 1, 2)));
 int vprintf(const char* __restrict format, va_list args) __attribute__((format(printf, 1, 0)));
 int puts(const char* text);
+int putchar(int c);
+
+int fprintf(FILE* __restrict stream, const char* __restrict format, ...) __attribute__((format(printf, 2, 3)));
+int vfprintf(FILE* __restrict stream, const char* __restrict format, va_list args)
+    __attribute__((format(printf, 2, 0)));
+size_t fwrite(const void* __restrict data, size_t size, size_t count, FILE* __restrict stream);
+int fputs(const char* __restrict text, FILE* __restrict stream);
+int fputc(int c, FILE* stream);
+int putc(int c, FILE* stream);
+int fflush(FILE* stream);
+int feof(FILE* stream);
+int ferror(FILE* stream);
 
 // Declared because libc++'s <cstdio> needs std::remove and std::rename to exist next to the algorithms of the same name
 int remove(const char* path) _CEMU_PATCH_NOEXCEPT;

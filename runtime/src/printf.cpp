@@ -1,8 +1,5 @@
-// provides: vsnprintf snprintf vsprintf sprintf vprintf printf puts
-// Formatted output in the "C" locale. The conversions are d i u o x X c s p f F e E g G a A n and %, with the flags
-// - + space # 0, field width, precision, * for either, and the length modifiers hh h l ll j z t. Floating point is
-// correctly rounded to 17 significant digits; digits past those are printed as zeros. printf and puts write a line
-// to the log through OSReport.
+// provides: vsnprintf snprintf vsprintf sprintf vprintf printf puts putchar fprintf vfprintf fwrite fputs fputc putc
+// provides: fflush feof ferror
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -384,6 +381,9 @@ void format(Output& out, const char* fmt, va_list args) {
             size = (int)sizeof(ptrdiff_t);
             p++;
             break;
+        case 'L':
+            p++;
+            break;
         }
         spec.conversion = *p;
         switch (*p) {
@@ -510,4 +510,63 @@ extern "C" __attribute__((weak)) int printf(const char* fmt, ...) {
 extern "C" __attribute__((weak)) int puts(const char* text) {
     _IMPORT_COREINIT_OSReport("%s\n", text);
     return 1;
+}
+
+// stdout and stderr. Cemu holds back the text of the log until its line is complete.
+
+extern "C" __attribute__((weak)) size_t fwrite(const void* data, size_t size, size_t count, FILE* stream) {
+    const char* text = (const char*)data;
+    char chunk[256];
+    for (size_t left = size * count; left;) {
+        size_t length = left < sizeof(chunk) - 1 ? left : sizeof(chunk) - 1;
+        memcpy(chunk, text, length);
+        chunk[length] = '\0';
+        _IMPORT_COREINIT_OSReport("%s", chunk);
+        text += length;
+        left -= length;
+    }
+    return count;
+}
+
+extern "C" __attribute__((weak)) int vfprintf(FILE* stream, const char* fmt, va_list args) {
+    return vprintf(fmt, args);
+}
+
+extern "C" __attribute__((weak)) int fprintf(FILE* stream, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    int length = vprintf(fmt, args);
+    va_end(args);
+    return length;
+}
+
+extern "C" __attribute__((weak)) int fputs(const char* text, FILE* stream) {
+    fwrite(text, 1, strlen(text), stream);
+    return 1;
+}
+
+extern "C" __attribute__((weak)) int fputc(int c, FILE* stream) {
+    char ch = (char)c;
+    fwrite(&ch, 1, 1, stream);
+    return (unsigned char)c;
+}
+
+extern "C" __attribute__((weak)) int putc(int c, FILE* stream) {
+    return fputc(c, stream);
+}
+
+extern "C" __attribute__((weak)) int putchar(int c) {
+    return fputc(c, stdout);
+}
+
+extern "C" __attribute__((weak)) int fflush(FILE* stream) {
+    return 0;
+}
+
+extern "C" __attribute__((weak)) int feof(FILE* stream) {
+    return 0;
+}
+
+extern "C" __attribute__((weak)) int ferror(FILE* stream) {
+    return 0;
 }

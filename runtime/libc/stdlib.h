@@ -34,6 +34,9 @@ unsigned long strtoul(const char* __restrict str, char** __restrict end, int bas
 unsigned long long strtoull(const char* __restrict str, char** __restrict end, int base) _CEMU_PATCH_NOEXCEPT;
 double strtod(const char* __restrict str, char** __restrict end) _CEMU_PATCH_NOEXCEPT;
 float strtof(const char* __restrict str, char** __restrict end) _CEMU_PATCH_NOEXCEPT;
+_CEMU_PATCH_INLINE long double strtold(const char* __restrict str, char** __restrict end) _CEMU_PATCH_NOEXCEPT {
+    return strtod(str, end);
+}
 int atoi(const char* str) _CEMU_PATCH_NOEXCEPT;
 long atol(const char* str) _CEMU_PATCH_NOEXCEPT;
 long long atoll(const char* str) _CEMU_PATCH_NOEXCEPT;

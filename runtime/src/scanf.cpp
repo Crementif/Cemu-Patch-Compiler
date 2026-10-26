@@ -1,6 +1,6 @@
 // provides: vsscanf sscanf
 // Formatted input from strings in the "C" locale. The conversions are d i u o x X c s [ p f F e E g G a A n and %,
-// with assignment suppression (*), a maximum field width and the length modifiers hh h l ll j z t.
+// with assignment suppression (*), a maximum field width and the length modifiers hh h l ll j z t L.
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -95,6 +95,10 @@ extern "C" __attribute__((weak)) int vsscanf(const char* input, const char* fmt,
             break;
         case 't':
             size = (int)sizeof(ptrdiff_t);
+            p++;
+            break;
+        case 'L':
+            wide = true;
             p++;
             break;
         }
