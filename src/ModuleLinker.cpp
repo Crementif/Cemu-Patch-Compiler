@@ -178,6 +178,9 @@ static std::unique_ptr<llvm::Module> compileToModule(llvm::LLVMContext &context,
   if (!isRuntime) {
     // Functions only referenced from patch directives or asm still have to reach the linker
     args.push_back("-femit-all-decls");
+    // .loc directives for the source comments, without debug sections
+    if (options.sourceComments)
+      args.push_back("-gline-directives-only");
   }
   if (ext == ".c" || ext == ".h") {
     args.push_back("-x");

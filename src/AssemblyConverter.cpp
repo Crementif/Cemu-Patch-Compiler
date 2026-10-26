@@ -201,6 +201,110 @@ std::string AssemblyConverter::getEmittedSymbolName(std::string_view symbol) con
   return std::string(symbol);
 }
 
+// Comments the code with its source lines, from the .file and .loc directives of -gline-directives-only
+class SourceLineComments {
+public:
+  // Returns whether the line was line info
+  bool handleLine(std::string_view line, std::vector<std::string>& output) {
+    std::string_view args;
+    if (matchDirective(line, ".file", args))
+      addFile(args);
+    else if (matchDirective(line, ".loc", args))
+      addLocation(args, output);
+    // Line info also brings unwind directives and labels for the line table
+    else if (!line.starts_with(".cfi_") && !(line.starts_with(".Ltmp") && line.ends_with(':')))
+      return false;
+    return true;
+  }
+
+private:
+  static bool matchDirective(std::string_view line, std::string_view name, std::string_view& args) {
+    if (!line.starts_with(name) || line.size() <= name.size() || (line[name.size()] != ' ' && line[name.size()] != '\t'))
+      return false;
+    args = line.substr(name.size());
+    return true;
+  }
+
+  // .file <index> "<directory>" "<file>"
+  void addFile(std::string_view args) {
+    uint32_t index = 0;
+    if (!parseNumber(args, index))
+      return;
+    std::vector<std::string> parts = quotedStrings(args);
+    if (parts.empty())
+      return;
+    fs::path path(parts[0]);
+    if (parts.size() > 1)
+      path /= parts[1];
+    m_files[index] = path;
+  }
+
+  // .loc <file index> <line> [<column>] [<options>]
+  void addLocation(std::string_view args, std::vector<std::string>& output) {
+    uint32_t index = 0, lineNumber = 0;
+    if (!parseNumber(args, index) || !parseNumber(args, lineNumber) || lineNumber == 0)
+      return;
+    if (index == m_lastFile && lineNumber == m_lastLine)
+      return;
+    auto file = m_files.find(index);
+    if (file == m_files.end())
+      return;
+    const std::vector<std::string>& lines = readLines(file->second);
+    if (lineNumber > lines.size())
+      return;
+    m_lastFile = index;
+    m_lastLine = lineNumber;
+    StringTokenParser text(lines[lineNumber - 1]);
+    text.skipWhitespaces();
+    text.trimWhitespaces();
+    if (text.isEndOfString())
+      return;
+    output.emplace_back(std::format("\t; {}:{}: {}", file->second.filename().generic_string(), lineNumber, text.getView()));
+  }
+
+  // parseU32 reads a leading 0 as hex, which breaks on file index 0
+  static bool parseNumber(std::string_view& args, uint32_t& value) {
+    while (!args.empty() && (args.front() == ' ' || args.front() == '\t'))
+      args.remove_prefix(1);
+    auto [end, ec] = std::from_chars(args.data(), args.data() + args.size(), value);
+    if (ec != std::errc())
+      return false;
+    args.remove_prefix(end - args.data());
+    return true;
+  }
+
+  static std::vector<std::string> quotedStrings(std::string_view line) {
+    std::vector<std::string> result;
+    for (size_t i = 0; i < line.size(); i++) {
+      if (line[i] != '"')
+        continue;
+      std::string value;
+      for (i++; i < line.size() && line[i] != '"'; i++) {
+        if (line[i] == '\\' && i + 1 < line.size())
+          i++;
+        value.push_back(line[i]);
+      }
+      result.push_back(std::move(value));
+    }
+    return result;
+  }
+
+  const std::vector<std::string>& readLines(const fs::path& path) {
+    auto [it, inserted] = m_sources.try_emplace(path.generic_string());
+    if (inserted) {
+      std::ifstream file(path);
+      for (std::string text; std::getline(file, text);)
+        it->second.push_back(std::move(text));
+    }
+    return it->second;
+  }
+
+  std::map<uint32_t, fs::path> m_files;
+  std::map<std::string, std::vector<std::string>> m_sources;
+  uint32_t m_lastFile = 0;
+  uint32_t m_lastLine = 0;
+};
+
 void AssemblyConverter::convertClangToCemu(const TextFile &inputFile,
                                            TextFile &outputTextFile) {
   printf("Starting convertClangToCemu for module %s...\n",
@@ -208,6 +312,7 @@ void AssemblyConverter::convertClangToCemu(const TextFile &inputFile,
   fflush(stdout);
 
   std::set<size_t> stringDataLines;
+  SourceLineComments sourceLines;
   std::vector<std::pair<std::string, std::string>> symbolAliases;
   size_t firstOutputLine = outputTextFile.lines.size();
   for (auto inputLine : inputFile.lines) {
@@ -221,6 +326,9 @@ void AssemblyConverter::convertClangToCemu(const TextFile &inputFile,
       if (trimmed == "#APP" || trimmed == "#NO_APP") {
         continue;
       }
+      // Before the renames below, which would also apply to the file names
+      if (m_sourceComments && sourceLines.handleLine(trimmed, outputTextFile.lines))
+        continue;
     }
 
     inputLine = AsmUpdater_fixClangLocalLabels(m_unitHash, inputLine);

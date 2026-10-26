@@ -6,6 +6,9 @@ class AssemblyConverter {
 public:
   AssemblyConverter() = default;
 
+  // Comments the code with its source lines
+  void setSourceComments(bool enabled) { m_sourceComments = enabled; }
+
   void prepare(std::unique_ptr<TextFile> assembly, std::string_view moduleName);
 
   std::unique_ptr<TextFile> emitPatch(std::string_view moduleGroupName,
@@ -26,6 +29,7 @@ private:
   std::unique_ptr<TextFile> m_inputTextFile;
   std::string m_moduleName;
   uint64_t m_unitHash = 0;
+  bool m_sourceComments = false;
   std::vector<std::string> m_patchDirectives;
   std::set<std::string> m_exportedSymbols;
   std::map<std::string, std::string> m_privateSymbolRenames;

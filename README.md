@@ -38,6 +38,7 @@ CemuPatchCompiler.exe "C:\Path\To\Source" -i "SUBF, MULLW"
 | `-o`, `--output <file\|dir>` | Specify target output patch file or directory. |
 | `-c`, `--checksum <hex>` | Override target module checksum (e.g. `0x6267BFD0`). |
 | `-i`, `--hardcode-instructions <list>` | Extend instructions to hardcode as `.int` (e.g. `SUBF, MULLW`). |
+| `-s`, `--source-comments` | Add the source lines of the code as comments inside the compiled patch file.
 | `-O0`, `-O1`, `-O2`, `-O3`, `-Os`, `-Oz` | Optimization level (default `-Os`). |
 
 ---

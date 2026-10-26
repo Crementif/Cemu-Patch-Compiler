@@ -80,6 +80,9 @@ static void loadCompileOptionsFromConfig(const Config &config, CompileOptions &o
   std::string optimization = config.get("Settings", "optimization");
   if (!optimization.empty())
     options.optLevel = optimization;
+  std::string sourceComments = config.get("Settings", "sourceComments");
+  if (sourceComments == "true" || sourceComments == "1")
+    options.sourceComments = true;
   std::istringstream clangArgs(config.get("Settings", "clangArgs"));
   for (std::string arg; clangArgs >> arg;)
     options.clangArgs.push_back(arg);
@@ -96,6 +99,7 @@ static void printHelp(const char *execName) {
   printf("  -c, --checksum <hex>       Override target module checksum (e.g. 0x6267BFD0).\n");
   printf("  -i, --hardcode-instructions <list> Extend instructions to hardcode as .int (stop-gap for Cemu's assembler, e.g. -i SUBF,MULLW).\n");
   printf("  -O0, -O1, -O2, -O3, -Os, -Oz  Optimization level of the linked patch (default -Os).\n");
+  printf("  -s, --source-comments      Write the source line of each instruction as a comment.\n");
   printf("  -D<macro>[=value], -I<dir>  Define a macro or add an include directory.\n");
   printf("  -X, --clang-arg <arg>      Pass an argument to clang (e.g. -X -std=c++23).\n\n");
   printf("Execution Modes:\n");
@@ -185,6 +189,8 @@ int main(int argc, char *argv[]) {
     } else if (arg.size() == 3 && arg.starts_with("-O") &&
                std::string_view("0123sz").find(arg[2]) != std::string_view::npos) {
       options.optLevel = arg.substr(2);
+    } else if (arg == "-s" || arg == "--source-comments") {
+      options.sourceComments = true;
     } else if (arg == "-X" || arg == "--clang-arg") {
       if (i + 1 < argc) {
         options.clangArgs.push_back(argv[++i]);

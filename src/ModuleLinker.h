@@ -7,6 +7,8 @@ struct CompileOptions {
   std::string optLevel = "s";
   // Extra arguments for clang, appended after the built-in ones so they can override them
   std::vector<std::string> clangArgs;
+  // Source lines as comments in the patch (-s)
+  bool sourceComments = false;
 };
 
 struct SourceUnit {
