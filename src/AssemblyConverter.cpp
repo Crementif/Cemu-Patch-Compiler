@@ -204,17 +204,22 @@ std::string AssemblyConverter::getEmittedSymbolName(std::string_view symbol) con
 // Comments the code with its source lines, from the .file and .loc directives of -gline-directives-only
 class SourceLineComments {
 public:
-  // Returns whether the line was line info
   bool handleLine(std::string_view line, std::vector<std::string>& output) {
+    StringTokenParser parser(line);
+    parser.skipWhitespaces();
+    parser.trimWhitespaces();
+    line = parser.getView();
     std::string_view args;
-    if (matchDirective(line, ".file", args))
+    if (matchDirective(line, ".file", args)) {
       addFile(args);
-    else if (matchDirective(line, ".loc", args))
+      return true;
+    }
+    if (matchDirective(line, ".loc", args)) {
       addLocation(args, output);
+      return true;
+    }
     // Line info also brings unwind directives and labels for the line table
-    else if (!line.starts_with(".cfi_") && !(line.starts_with(".Ltmp") && line.ends_with(':')))
-      return false;
-    return true;
+    return line.starts_with(".cfi_") || (line.starts_with(".Ltmp") && line.ends_with(':'));
   }
 
 private:
@@ -225,7 +230,6 @@ private:
     return true;
   }
 
-  // .file <index> "<directory>" "<file>"
   void addFile(std::string_view args) {
     uint32_t index = 0;
     if (!parseNumber(args, index))
@@ -239,7 +243,6 @@ private:
     m_files[index] = path;
   }
 
-  // .loc <file index> <line> [<column>] [<options>]
   void addLocation(std::string_view args, std::vector<std::string>& output) {
     uint32_t index = 0, lineNumber = 0;
     if (!parseNumber(args, index) || !parseNumber(args, lineNumber) || lineNumber == 0)
@@ -326,10 +329,11 @@ void AssemblyConverter::convertClangToCemu(const TextFile &inputFile,
       if (trimmed == "#APP" || trimmed == "#NO_APP") {
         continue;
       }
-      // Before the renames below, which would also apply to the file names
-      if (m_sourceComments && sourceLines.handleLine(trimmed, outputTextFile.lines))
-        continue;
     }
+
+    // Before the renames below, which would also apply to the file names
+    if (m_sourceComments && sourceLines.handleLine(inputLine, outputTextFile.lines))
+      continue;
 
     inputLine = AsmUpdater_fixClangLocalLabels(m_unitHash, inputLine);
     inputLine = rewritePrivateSymbols(m_privateSymbolRenames, inputLine);

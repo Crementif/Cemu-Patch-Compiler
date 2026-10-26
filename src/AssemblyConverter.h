@@ -6,7 +6,6 @@ class AssemblyConverter {
 public:
   AssemblyConverter() = default;
 
-  // Comments the code with its source lines
   void setSourceComments(bool enabled) { m_sourceComments = enabled; }
 
   void prepare(std::unique_ptr<TextFile> assembly, std::string_view moduleName);
