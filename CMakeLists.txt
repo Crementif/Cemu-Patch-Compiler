@@ -28,7 +28,6 @@ set(SOURCES
     src/AssemblyConverter.cpp
     src/CompilerDriver.cpp
     src/ModuleLinker.cpp
-    src/EmbeddedHeader.h
     src/AsmUpdater.cpp
     src/InstructionAssembler.cpp
     src/AssemblyParser.h

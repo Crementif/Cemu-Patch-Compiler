@@ -3,7 +3,17 @@
 // provides: scalbnf fma fmaf sin cos tan asin acos atan atan2 asinf acosf atanf atan2f sinh cosh tanh sinhf coshf
 // provides: tanhf asinh acosh atanh asinhf acoshf atanhf exp exp2 expm1 expf exp2f expm1f log log2 log10 log1p logf
 // provides: log2f log10f log1pf pow powf cbrt cbrtf hypot hypotf scalbln scalblnf ilogb ilogbf logb logbf remainder
-// provides: remainderf remquo remquof nextafter nextafterf nexttoward nexttowardf
+// provides: remainderf remquo remquof nextafter nextafterf nexttoward nexttowardf sqrt sqrtf cemu_patch_fast_sqrt
+// provides: cemu_patch_fast_sqrtf sinf cosf tanf fabsf copysignf fminf fmaxf truncf floorf ceilf roundf
+// The kernels of sinf, cosf and tanf originate from musl's __sindf.c, __cosdf.c, and __tandf.c:
+// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+// Developed at SunPro, a Sun Microsystems, Inc. business.
+// Permission to use, copy, modify, and distribute this software is freely
+// granted, provided that this notice is preserved.
+//
+// Copyright 2004 Sun Microsystems, Inc. All Rights Reserved.
+// Permission to use, copy, modify, and distribute this software is freely
+// granted, provided that this notice is preserved.
 
 #include <math.h>
 
@@ -92,6 +102,34 @@ extern "C" __attribute__((weak)) float fdimf(float x, float y) {
     return x > y ? x - y : 0.0f;
 }
 
+extern "C" __attribute__((weak, always_inline)) float fabsf(float x) {
+    return __builtin_fabsf(x);
+}
+
+extern "C" __attribute__((weak, always_inline)) float copysignf(float magnitude, float sign) {
+    return fromBits((bitsOf(magnitude) & 0x7fffffffu) | (bitsOf(sign) & 0x80000000u));
+}
+
+extern "C" __attribute__((weak, always_inline)) float fminf(float x, float y) {
+    if (x != x)
+        return y;
+    if (y != y)
+        return x;
+    if (x == y)
+        return fromBits(bitsOf(x) | bitsOf(y));
+    return x < y ? x : y;
+}
+
+extern "C" __attribute__((weak, always_inline)) float fmaxf(float x, float y) {
+    if (x != x)
+        return y;
+    if (y != y)
+        return x;
+    if (x == y)
+        return fromBits(bitsOf(x) & bitsOf(y));
+    return x > y ? x : y;
+}
+
 // Rounding
 
 extern "C" __attribute__((weak)) double trunc(double x) {
@@ -145,6 +183,34 @@ extern "C" __attribute__((weak)) double round(double x) {
     else
         y = y + a;
     return negative ? -y : y;
+}
+
+extern "C" __attribute__((weak, always_inline)) float truncf(float x) {
+    float magnitude = fabsf(x);
+    if (magnitude >= 0x1p23f || x != x)
+        return x;
+    if (magnitude < 1.0f)
+        return x * 0.0f;
+    return (float)(int)x;
+}
+
+extern "C" __attribute__((weak, always_inline)) float floorf(float x) {
+    float result = truncf(x);
+    return result > x ? result - 1.0f : result;
+}
+
+extern "C" __attribute__((weak, always_inline)) float ceilf(float x) {
+    float result = truncf(x);
+    return result < x ? result + 1.0f : result;
+}
+
+extern "C" __attribute__((weak, always_inline)) float roundf(float x) {
+    float magnitude = fabsf(x);
+    if (magnitude >= 0x1p23f || x != x)
+        return x;
+    if (magnitude < 0.5f)
+        return x * 0.0f;
+    return (float)(int)(x < 0.0f ? x - 0.5f : x + 0.5f);
 }
 
 // Rounds to the nearest integer, ties to even
@@ -481,6 +547,77 @@ extern "C" __attribute__((weak)) float nextafterf(float x, float y) {
     return nexttowardf(x, y);
 }
 
+// Square roots
+
+namespace {
+
+__attribute__((always_inline)) double rsqrtEstimate(double x) {
+    double estimate;
+    asm("frsqrte %0, %1" : "=f"(estimate) : "f"(x));
+    return estimate;
+}
+
+}
+
+extern "C" __attribute__((weak, always_inline)) float cemu_patch_fast_sqrtf(float x) {
+    if (x == 0.0f || x != x)
+        return x;
+    if (x < 0.0f)
+        return (x - x) / (x - x);
+    if (x > 0x1.fffffep+127f)
+        return x;
+    return (float)((double)x * rsqrtEstimate((double)x));
+}
+
+extern "C" __attribute__((weak, always_inline)) double cemu_patch_fast_sqrt(double x) {
+    if (x == 0.0 || x != x)
+        return x;
+    if (x < 0.0)
+        return (x - x) / (x - x);
+    if (x > 0x1.fffffffffffffp+1023)
+        return x;
+    return x * rsqrtEstimate(x);
+}
+
+// Three Newton steps in double take the 1/32 estimate past float precision
+extern "C" __attribute__((weak, always_inline)) float sqrtf(float x) {
+    if (x == 0.0f || x != x)
+        return x;
+    if (x < 0.0f)
+        return (x - x) / (x - x);
+    if (x > 0x1.fffffep+127f)
+        return x;
+    double value = (double)x;
+    double half = 0.5 * value;
+    double estimate = rsqrtEstimate(value);
+    estimate *= 1.5 - half * estimate * estimate;
+    estimate *= 1.5 - half * estimate * estimate;
+    estimate *= 1.5 - half * estimate * estimate;
+    return (float)(value * estimate);
+}
+
+extern "C" __attribute__((weak, always_inline)) double sqrt(double x) {
+    if (x == 0.0 || x != x)
+        return x;
+    if (x < 0.0)
+        return (x - x) / (x - x);
+    if (x > 0x1.fffffffffffffp+1023)
+        return x;
+    double value = x;
+    double resultScale = 1.0;
+    if (value < 0x1p-1022) {
+        value *= 0x1p+512;
+        resultScale = 0x1p-256;
+    }
+    double half = 0.5 * value;
+    double estimate = rsqrtEstimate(value);
+    estimate *= 1.5 - half * estimate * estimate;
+    estimate *= 1.5 - half * estimate * estimate;
+    estimate *= 1.5 - half * estimate * estimate;
+    estimate *= 1.5 - half * estimate * estimate;
+    return value * estimate * resultScale;
+}
+
 // Trigonometry
 
 namespace {
@@ -609,6 +746,89 @@ extern "C" __attribute__((weak)) double tan(double x) {
     double s = sinKernel(y0, y1, true);
     double c = cosKernel(y0, y1);
     return n & 1 ? -c / s : s / c;
+}
+
+namespace {
+
+// Reduces x to [-pi/4, pi/4] with a two part pi/2, exact enough for float up to 2^28 * pi/2. Larger values return 0.
+__attribute__((always_inline)) int reducePio2f(float x, double& reduced) {
+    double a = x < 0.0f ? -(double)x : (double)x;
+    if (a != a || a > 0x1.921fb6p+28) {
+        reduced = (double)(x - x);
+        return 0;
+    }
+    if (a <= 0x1.921fb6p-1) {
+        reduced = (double)x;
+        return 0;
+    }
+    double scaled = (double)x * 6.36619772367581382433e-1;
+    int quadrant = (int)(scaled + (scaled < 0.0 ? -0.5 : 0.5));
+    double result = (double)x;
+    result -= quadrant * 1.57079631090164184570e+0;
+    result -= quadrant * 1.58932547735281966916e-8;
+    reduced = result;
+    return quadrant;
+}
+
+__attribute__((always_inline)) double sinKernelf(double x) {
+    double z = x * x;
+    double z2 = z * z;
+    double tail = -1.98393348360966317347e-4 + z * 2.7183114939898219064e-6;
+    return (x + (z * x) * (-1.66666666416265235595e-1 + z * 8.3333293858894631756e-3)) + (z * x) * z2 * tail;
+}
+
+__attribute__((always_inline)) double cosKernelf(double x) {
+    double z = x * x;
+    double z2 = z * z;
+    double tail = -1.38867637746099294692e-3 + z * 2.43904487962774090654e-5;
+    return ((1.0 + z * -4.99999997251031003120e-1) + z2 * 4.16666233237390631894e-2) + (z2 * z) * tail;
+}
+
+__attribute__((always_inline)) double tanKernelf(double x) {
+    double z = x * x;
+    double z2 = z * z;
+    double cubic = z * x;
+    double high = 2.97435743359967304927e-3 + z * 9.46564784943673166728e-3;
+    double middle = 5.33812378445670393523e-2 + z * 2.45283181166547278873e-2;
+    double low = 3.33331395030791399758e-1 + z * 1.33392002712976742718e-1;
+    return (x + cubic * low) + (cubic * z2) * (middle + z2 * high);
+}
+
+}
+
+extern "C" __attribute__((weak, always_inline)) float sinf(float x) {
+    double reduced;
+    switch (reducePio2f(x, reduced) & 3) {
+    case 0:
+        return (float)sinKernelf(reduced);
+    case 1:
+        return (float)cosKernelf(reduced);
+    case 2:
+        return (float)-sinKernelf(reduced);
+    default:
+        return (float)-cosKernelf(reduced);
+    }
+}
+
+extern "C" __attribute__((weak, always_inline)) float cosf(float x) {
+    double reduced;
+    switch (reducePio2f(x, reduced) & 3) {
+    case 0:
+        return (float)cosKernelf(reduced);
+    case 1:
+        return (float)-sinKernelf(reduced);
+    case 2:
+        return (float)-cosKernelf(reduced);
+    default:
+        return (float)sinKernelf(reduced);
+    }
+}
+
+extern "C" __attribute__((weak, always_inline)) float tanf(float x) {
+    double reduced;
+    int quadrant = reducePio2f(x, reduced);
+    double result = tanKernelf(reduced);
+    return (float)(quadrant & 1 ? -1.0 / result : result);
 }
 
 extern "C" __attribute__((weak)) double atan(double x) {

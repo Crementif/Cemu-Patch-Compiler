@@ -57,18 +57,28 @@ typedef float float_t;
 typedef double double_t;
 
 double fabs(double x);
+float fabsf(float x);
 double copysign(double magnitude, double sign);
+float copysignf(float magnitude, float sign);
 double fmin(double x, double y);
+float fminf(float x, float y);
 double fmax(double x, double y);
+float fmaxf(float x, float y);
 double fdim(double x, double y);
 float fdimf(float x, float y);
 double fma(double x, double y, double z);
 float fmaf(float x, float y, float z);
+double sqrt(double x);
+float sqrtf(float x);
 
 double trunc(double x);
+float truncf(float x);
 double floor(double x);
+float floorf(float x);
 double ceil(double x);
+float ceilf(float x);
 double round(double x);
+float roundf(float x);
 double rint(double x);
 float rintf(float x);
 double nearbyint(double x);
@@ -114,6 +124,9 @@ _CEMU_PATCH_INLINE float nanf(const char* tag) { (void)tag; return __builtin_nan
 double sin(double x);
 double cos(double x);
 double tan(double x);
+float sinf(float x);
+float cosf(float x);
+float tanf(float x);
 double asin(double x);
 double acos(double x);
 double atan(double x);

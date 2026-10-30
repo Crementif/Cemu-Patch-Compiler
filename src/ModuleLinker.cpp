@@ -1,6 +1,5 @@
 #include "ModuleLinker.h"
 #include "EmbeddedFiles.h"
-#include "EmbeddedHeader.h"
 
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/CodeGen/CodeGenAction.h"
@@ -54,6 +53,7 @@ static constexpr std::string_view kResourceDir = "C:/__cemu_patch_resource";
 static const std::string kLibcxxIncludeDir = std::format("{}/include/c++/v1", kResourceDir);
 static const std::string kLibcIncludeDir = std::format("{}/libc", kResourceDir);
 static const std::string kClangIncludeDir = std::format("{}/include", kResourceDir);
+static const std::string kImplicitHeader = std::format("{}/cemu_patch.h", kLibcIncludeDir);
 
 struct EmbeddedFile {
   std::string path;
@@ -205,12 +205,8 @@ static std::unique_ptr<llvm::Module> compileToModule(llvm::LLVMContext &context,
   if (!invocation)
     return nullptr;
 
-  // Inject the PATCH_* macros and math helpers as an implicit header
-  invocation->getPreprocessorOpts().Includes.push_back("C:/__cemu_patch_macros.h");
-  invocation->getPreprocessorOpts().addRemappedFile(
-      "C:/__cemu_patch_macros.h",
-      llvm::MemoryBuffer::getMemBufferCopy(kCemuPatchImplicitHeader, "C:/__cemu_patch_macros.h")
-          .release());
+  // The PATCH_* macros are available without including anything
+  invocation->getPreprocessorOpts().Includes.push_back(kImplicitHeader);
   invocation->getPreprocessorOpts().addRemappedFile(
       sourcePath, llvm::MemoryBuffer::getMemBufferCopy(source.contents, sourcePath).release());
   invocation->getPreprocessorOpts().RetainRemappedFileBuffers = true;
@@ -231,8 +227,8 @@ static bool isSymbolChar(char c) {
   return isSymbolStart(c) || std::isdigit(static_cast<unsigned char>(c));
 }
 
-// The identifiers of asm text, except the first of each statement, which is a mnemonic like the fabs of the implicit
-// header's fabsf rather than the runtime's fabs
+// The identifiers of asm text, except the first of each statement, which is a mnemonic like fabs rather than the
+// runtime's fabs
 static void collectAsmIdentifiers(llvm::StringRef text, std::set<std::string> &out) {
   size_t i = 0;
   bool statementStart = true;
@@ -389,13 +385,13 @@ static constexpr auto kCodegenLibcalls = std::to_array<std::string_view>({
     "memmove",   "memset",     "memcpy",   "__udivdi3", "__umoddi3",    "__divdi3",   "__moddi3",     "__fixsfdi",
     "__fixunssfdi", "__fixdfdi", "__fixunsdfdi", "__floatdisf", "__floatundisf", "__floatdidf", "__floatundidf",
     "fmod",      "fmodf",      "pow",      "powf",      "exp",          "expf",       "exp2",         "exp2f",
-    "log",       "logf",       "log2",     "log2f",     "log10",        "log10f",     "sin",          "cos",
-    "floor",     "ceil",       "trunc",    "round",     "rint",         "rintf",      "nearbyint",    "nearbyintf",
-    "fmin",      "fmax",       "ldexp",    "ldexpf",    "lround",       "lroundf",    "llround",      "llroundf",
-    "lrint",     "lrintf",     "llrint",   "llrintf"});
+    "log",       "logf",       "log2",     "log2f",     "log10",        "log10f",     "sin",          "sinf",
+    "cos",       "cosf",       "sqrt",     "sqrtf",     "floor",        "floorf",     "ceil",         "ceilf",
+    "trunc",     "truncf",     "round",    "roundf",    "rint",         "rintf",      "nearbyint",    "nearbyintf",
+    "fmin",      "fminf",      "fmax",     "fmaxf",     "ldexp",        "ldexpf",     "lround",       "lroundf",
+    "llround",   "llroundf",   "lrint",    "lrintf",    "llrint",       "llrintf"});
 
-// The library functions of math intrinsics, for double and float arguments. The float ones the implicit header
-// defines inline, like sinf, are left out.
+// The library functions of math intrinsics, for double and float arguments
 struct MathLibcall {
   llvm::Intrinsic::ID intrinsic;
   std::string_view ifDouble, ifFloat;
@@ -404,17 +400,27 @@ static constexpr MathLibcall kMathLibcalls[] = {
     {llvm::Intrinsic::pow, "pow", "powf"},         {llvm::Intrinsic::exp, "exp", "expf"},
     {llvm::Intrinsic::exp2, "exp2", "exp2f"},      {llvm::Intrinsic::log, "log", "logf"},
     {llvm::Intrinsic::log2, "log2", "log2f"},      {llvm::Intrinsic::log10, "log10", "log10f"},
-    {llvm::Intrinsic::sin, "sin", ""},             {llvm::Intrinsic::cos, "cos", ""},
-    {llvm::Intrinsic::floor, "floor", ""},         {llvm::Intrinsic::ceil, "ceil", ""},
-    {llvm::Intrinsic::trunc, "trunc", ""},         {llvm::Intrinsic::round, "round", ""},
-    {llvm::Intrinsic::rint, "rint", "rintf"},      {llvm::Intrinsic::nearbyint, "nearbyint", "nearbyintf"},
-    {llvm::Intrinsic::minnum, "fmin", ""},         {llvm::Intrinsic::maxnum, "fmax", ""},
+    {llvm::Intrinsic::sin, "sin", "sinf"},         {llvm::Intrinsic::cos, "cos", "cosf"},
+    {llvm::Intrinsic::sqrt, "sqrt", "sqrtf"},      {llvm::Intrinsic::floor, "floor", "floorf"},
+    {llvm::Intrinsic::ceil, "ceil", "ceilf"},      {llvm::Intrinsic::trunc, "trunc", "truncf"},
+    {llvm::Intrinsic::round, "round", "roundf"},   {llvm::Intrinsic::rint, "rint", "rintf"},
+    {llvm::Intrinsic::nearbyint, "nearbyint", "nearbyintf"},
+    {llvm::Intrinsic::minnum, "fmin", "fminf"},    {llvm::Intrinsic::maxnum, "fmax", "fmaxf"},
     {llvm::Intrinsic::ldexp, "ldexp", "ldexpf"},   {llvm::Intrinsic::lround, "lround", "lroundf"},
     {llvm::Intrinsic::llround, "llround", "llroundf"}, {llvm::Intrinsic::lrint, "lrint", "lrintf"},
     {llvm::Intrinsic::llrint, "llrint", "llrintf"}};
 
 static std::string_view pickByFloatType(const llvm::Type *type, std::string_view ifFloat, std::string_view ifDouble) {
   return type->isFloatTy() ? ifFloat : type->isDoubleTy() ? ifDouble : std::string_view();
+}
+
+static std::string_view getMathIntrinsicLibcall(const llvm::Function &function) {
+  for (const MathLibcall &math : kMathLibcalls) {
+    // the first argument has the floating point type, also for ldexp and lround
+    if (function.getIntrinsicID() == math.intrinsic && function.arg_size() > 0)
+      return pickByFloatType(function.getArg(0)->getType(), math.ifFloat, math.ifDouble);
+  }
+  return {};
 }
 
 static std::string_view getIntrinsicLibcall(const llvm::Function &function) {
@@ -426,14 +432,29 @@ static std::string_view getIntrinsicLibcall(const llvm::Function &function) {
   case llvm::Intrinsic::memset:
     return "memset";
   default:
-    break;
+    return getMathIntrinsicLibcall(function);
   }
-  for (const MathLibcall &math : kMathLibcalls) {
-    // the first argument has the floating point type, also for ldexp and lround
-    if (function.getIntrinsicID() == math.intrinsic && function.arg_size() > 0)
-      return pickByFloatType(function.getArg(0)->getType(), math.ifFloat, math.ifDouble);
+}
+
+// Clang turns builtins like __builtin_sqrtf, which libc++'s <cmath> uses, into math intrinsics. Code generation would
+// call the runtime for them since the 750 has no instructions for them, but the optimizer can't inline those calls.
+// So they become calls to the runtime's functions before optimization.
+static void lowerMathIntrinsics(llvm::Module &module) {
+  for (auto &function : llvm::make_early_inc_range(module)) {
+    std::string_view libcall = getMathIntrinsicLibcall(function);
+    if (libcall.empty())
+      continue;
+    llvm::FunctionCallee callee = module.getOrInsertFunction(libcall, function.getFunctionType());
+    for (auto *user : llvm::make_early_inc_range(function.users())) {
+      if (auto *call = llvm::dyn_cast<llvm::CallInst>(user); call && call->getCalledFunction() == &function) {
+        llvm::SmallVector<llvm::Value *> arguments(call->args());
+        auto *replacement = llvm::CallInst::Create(callee, arguments, "", call);
+        replacement->copyMetadata(*call);
+        call->replaceAllUsesWith(replacement);
+        call->eraseFromParent();
+      }
+    }
   }
-  return {};
 }
 
 // The helper code generation calls for an instruction, if any
@@ -521,6 +542,8 @@ static std::optional<std::set<std::string>> linkRuntimeUnits(llvm::LLVMContext &
   std::vector<bool> isLinked(units.size(), false);
   for (bool linkedUnit = true; linkedUnit;) {
     linkedUnit = false;
+    // also for the intrinsics of the runtime units linked in the last round
+    lowerMathIntrinsics(linked);
     std::set<std::string> undefined = collectUndefinedSymbols(linked);
     for (size_t i = 0; i < units.size(); i++) {
       const RuntimeUnit &unit = units[i];
@@ -577,9 +600,17 @@ static std::optional<std::set<std::string>> linkRuntimeUnits(llvm::LLVMContext &
 // with the memcpy of another patch in the graphic pack. Code generation still calls them by name.
 static void finalizeLibcalls(llvm::Module &module, const std::set<std::string> &definedByRuntime,
                              const std::set<std::string> &asmReferenced) {
-  // a dropped helper can be the last one needing another, like memmove needing memcpy
+  // a dropped helper can be the last one needing another, like memmove needing memcpy, and the internal functions and
+  // constants it used are dead now too, like sin's argument reduction
   for (bool dropped = true; dropped;) {
     dropped = false;
+    for (auto &global : llvm::make_early_inc_range(module.global_values())) {
+      global.removeDeadConstantUsers();
+      if (global.hasLocalLinkage() && global.use_empty() && !llvm::isa<llvm::GlobalAlias>(global)) {
+        global.eraseFromParent();
+        dropped = true;
+      }
+    }
     std::set<std::string_view> needed = collectCodegenLibcalls(module);
     for (std::string_view libcall : kCodegenLibcalls) {
       auto *function = module.getFunction(libcall);
